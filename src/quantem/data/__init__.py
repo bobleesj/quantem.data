@@ -14,7 +14,7 @@ Usage
 (256, 256)
 """
 
-__version__ = "0.0.2a4"
+__version__ = "0.0.2a5"
 
 from quantem.data.registry import (
     available,

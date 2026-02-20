@@ -20,67 +20,78 @@ interface DatasetInfo {
   technique: string;
   description: string;
   data?: { shape: number[]; dtype: string };
-  attribution?: { contributor: string; license: string };
+  attribution?: { contributor: string; license: string; institution?: string; date?: string };
+  instrument?: { microscope?: string; detector?: string; voltage_kv?: number };
+  calibration?: { pixel_size?: number; pixel_size_unit?: string };
 }
 
 // ============================================================================
-// Style constants
+// Style constants (matches quantem.widget conventions)
 // ============================================================================
 
-const SPACING = 6;
-const FONT_FAMILY = `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-const MONO_FAMILY = `'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace`;
+const SP = 4;
+const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+const MONO = `'SF Mono', 'Fira Code', Menlo, Consolas, monospace`;
 
-function makeStyles(colors: ThemeColors) {
+const TECHNIQUE_COLORS: Record<string, string> = {
+  "4dstem": "#e8a838",
+  hrtem: "#5ab8e0",
+  eels: "#8bc34a",
+  tomo: "#ce93d8",
+  diffraction: "#ff8a65",
+  complex: "#4dd0e1",
+  image: "#90a4ae",
+};
+
+function styles(c: ThemeColors) {
   return {
-    container: {
-      fontFamily: FONT_FAMILY,
+    root: {
+      fontFamily: FONT,
       fontSize: 11,
-      color: colors.text,
-      background: colors.bg,
-      border: `1px solid ${colors.border}`,
-      maxWidth: 720,
-      overflow: "hidden" as const,
+      color: c.text,
+      maxWidth: 680,
     },
     header: {
       display: "flex",
       alignItems: "center",
-      gap: SPACING * 2,
-      padding: `${SPACING}px ${SPACING * 2}px`,
-      borderBottom: `1px solid ${colors.border}`,
-      background: colors.controlBg,
+      gap: SP * 3,
+      padding: `${SP + 2}px ${SP * 3}px`,
+      borderBottom: `1px solid ${c.border}`,
+      background: c.controlBg,
     },
     title: {
       fontWeight: 600,
       fontSize: 12,
+      letterSpacing: 0.2,
       whiteSpace: "nowrap" as const,
     },
-    filterRow: {
+    filterGroup: {
       display: "flex",
       alignItems: "center",
-      gap: SPACING,
+      gap: SP,
       marginLeft: "auto",
     },
     select: {
-      fontFamily: FONT_FAMILY,
+      fontFamily: FONT,
       fontSize: 10,
-      padding: "2px 4px",
-      border: `1px solid ${colors.border}`,
-      background: colors.controlBg,
-      color: colors.text,
+      padding: "2px 6px",
+      border: `1px solid ${c.border}`,
+      background: c.controlBg,
+      color: c.text,
       cursor: "pointer",
+      outline: "none",
     },
-    button: {
-      fontFamily: FONT_FAMILY,
+    btn: {
+      fontFamily: FONT,
       fontSize: 10,
       padding: "2px 8px",
-      border: `1px solid ${colors.border}`,
-      background: colors.controlBg,
-      color: colors.text,
+      border: `1px solid ${c.border}`,
+      background: c.controlBg,
+      color: c.textMuted,
       cursor: "pointer",
     },
     tableWrap: {
-      maxHeight: 320,
+      maxHeight: 280,
       overflowY: "auto" as const,
     },
     table: {
@@ -90,91 +101,92 @@ function makeStyles(colors: ThemeColors) {
     },
     th: {
       textAlign: "left" as const,
-      padding: `${SPACING}px ${SPACING * 1.5}px`,
-      borderBottom: `1px solid ${colors.border}`,
-      background: colors.controlBg,
+      padding: `${SP}px ${SP * 2}px`,
+      borderBottom: `1px solid ${c.border}`,
+      background: c.controlBg,
       fontWeight: 600,
-      fontSize: 10,
-      color: colors.textMuted,
+      fontSize: 9,
+      color: c.textMuted,
       textTransform: "uppercase" as const,
-      letterSpacing: 0.5,
+      letterSpacing: 0.6,
       position: "sticky" as const,
       top: 0,
       zIndex: 1,
     },
     td: {
-      padding: `${SPACING - 1}px ${SPACING * 1.5}px`,
-      borderBottom: `1px solid ${colors.border}`,
+      padding: `${SP}px ${SP * 2}px`,
+      borderBottom: `1px solid ${c.border}`,
     },
     mono: {
-      fontFamily: MONO_FAMILY,
+      fontFamily: MONO,
       fontSize: 10,
     },
     detail: {
-      padding: `${SPACING * 2}px`,
-      borderTop: `1px solid ${colors.border}`,
-      background: colors.controlBg,
-      fontSize: 10,
+      padding: `${SP * 2}px ${SP * 3}px`,
+      borderTop: `1px solid ${c.border}`,
+      background: c.controlBg,
     },
     detailGrid: {
       display: "grid",
-      gridTemplateColumns: "auto 1fr",
-      gap: `${SPACING - 2}px ${SPACING * 2}px`,
+      gridTemplateColumns: "90px 1fr",
+      gap: `${SP - 1}px ${SP * 3}px`,
       alignItems: "baseline",
     },
     detailLabel: {
       fontWeight: 600,
-      color: colors.textMuted,
-      fontSize: 10,
+      color: c.textMuted,
+      fontSize: 9,
       textTransform: "uppercase" as const,
+      letterSpacing: 0.4,
     },
     detailValue: {
-      fontFamily: MONO_FAMILY,
+      fontFamily: MONO,
       fontSize: 10,
     },
     statusBar: {
-      padding: `${SPACING - 2}px ${SPACING * 2}px`,
-      borderTop: `1px solid ${colors.border}`,
+      padding: `${SP}px ${SP * 3}px`,
+      borderTop: `1px solid ${c.border}`,
       fontSize: 10,
-      color: colors.textMuted,
+      color: c.textMuted,
       display: "flex",
       justifyContent: "space-between",
     },
-    loadButton: {
-      fontFamily: FONT_FAMILY,
+    loadBtn: {
+      fontFamily: FONT,
       fontSize: 10,
       fontWeight: 600,
-      padding: "3px 12px",
-      border: `1px solid ${colors.accent}`,
-      background: colors.accent,
+      padding: "3px 14px",
+      border: "none",
+      background: c.accent,
       color: "#fff",
       cursor: "pointer",
+      letterSpacing: 0.3,
     },
     badge: {
       display: "inline-block",
-      padding: "1px 5px",
+      padding: "0px 4px",
       fontSize: 9,
       fontWeight: 500,
-      border: `1px solid ${colors.border}`,
-      background: colors.bgAlt,
-      color: colors.textMuted,
+      letterSpacing: 0.3,
     },
   } as const;
 }
 
 // ============================================================================
-// Technique colors (subtle)
+// Helpers
 // ============================================================================
 
-const TECHNIQUE_COLORS: Record<string, string> = {
-  "4dstem": "#e8a838",
-  "hrtem": "#5ab8e0",
-  "eels": "#8bc34a",
-  "tomo": "#ce93d8",
-  "diffraction": "#ff8a65",
-  "complex": "#4dd0e1",
-  "image": "#90a4ae",
-};
+function formatShape(shape: number[]): string {
+  if (!shape || shape.length === 0) return "\u2014";
+  return shape.join(" \u00d7 ");
+}
+
+function formatSize(mb: number): string {
+  if (!mb || mb === 0) return "\u2014";
+  if (mb < 1) return `${(mb * 1024).toFixed(0)} KB`;
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb.toFixed(1)} MB`;
+}
 
 // ============================================================================
 // Widget
@@ -182,7 +194,7 @@ const TECHNIQUE_COLORS: Record<string, string> = {
 
 function DataBrowser() {
   const { colors } = useTheme();
-  const styles = React.useMemo(() => makeStyles(colors), [colors]);
+  const s = React.useMemo(() => styles(colors), [colors]);
 
   const [catalogJson] = useModelState<string>("catalog_json");
   const [selectedName, setSelectedName] = useModelState<string>("selected_name");
@@ -193,121 +205,90 @@ function DataBrowser() {
   const [, setRefreshRequested] = useModelState<boolean>("_refresh_requested");
   const [, setLoadRequested] = useModelState<boolean>("_load_requested");
 
-  // Parse catalog
   const catalog: DatasetEntry[] = React.useMemo(() => {
-    try {
-      return JSON.parse(catalogJson || "[]");
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(catalogJson || "[]"); }
+    catch { return []; }
   }, [catalogJson]);
 
-  // Available techniques
   const techniques = React.useMemo(() => {
     const set = new Set(catalog.map((d) => d.technique));
     return Array.from(set).sort();
   }, [catalog]);
 
-  // Filter catalog
   const filtered = React.useMemo(() => {
     if (!techniqueFilter) return catalog;
     return catalog.filter((d) => d.technique === techniqueFilter);
   }, [catalog, techniqueFilter]);
 
-  // Parse selected info
   const selectedInfo: DatasetInfo | null = React.useMemo(() => {
     try {
       if (!selectedInfoJson) return null;
       return JSON.parse(selectedInfoJson) as DatasetInfo;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }, [selectedInfoJson]);
 
-  // Row click
   const handleRowClick = React.useCallback(
-    (name: string) => {
-      setSelectedName(name);
-    },
-    [setSelectedName]
+    (name: string) => setSelectedName(name),
+    [setSelectedName],
   );
 
-  // Load button
   const handleLoad = React.useCallback(() => {
-    if (selectedName) {
-      setLoadRequested(true);
-    }
+    if (selectedName) setLoadRequested(true);
   }, [selectedName, setLoadRequested]);
 
-  // Refresh
-  const handleRefresh = React.useCallback(() => {
-    setRefreshRequested(true);
-  }, [setRefreshRequested]);
-
-  const formatShape = (shape: number[]) => {
-    if (!shape || shape.length === 0) return "—";
-    return shape.join(" \u00d7 ");
-  };
-
-  const formatSize = (mb: number) => {
-    if (!mb || mb === 0) return "—";
-    if (mb < 1) return `${(mb * 1024).toFixed(0)} KB`;
-    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-    return `${mb.toFixed(1)} MB`;
-  };
+  const handleRefresh = React.useCallback(
+    () => setRefreshRequested(true),
+    [setRefreshRequested],
+  );
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <span style={styles.title}>quantem.data</span>
-        <div style={styles.filterRow}>
+    <div style={s.root}>
+      {/* ── Header ── */}
+      <div style={s.header}>
+        <span style={s.title}>quantem.data</span>
+        <div style={s.filterGroup}>
           <select
-            style={styles.select}
+            style={s.select}
             value={techniqueFilter}
             onChange={(e) => setTechniqueFilter(e.target.value)}
           >
             <option value="">All techniques</option>
             {techniques.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
           <button
-            style={styles.button}
+            style={{ ...s.btn, opacity: loading ? 0.5 : 1 }}
             onClick={handleRefresh}
             disabled={loading}
             title="Refresh catalog from HF Hub"
           >
-            {loading ? "..." : "Refresh"}
+            {loading ? "\u2026" : "Refresh"}
           </button>
         </div>
       </div>
 
-      {/* Table */}
-      <div style={styles.tableWrap}>
+      {/* ── Table ── */}
+      <div style={s.tableWrap}>
         {catalog.length === 0 ? (
-          <div style={{ padding: SPACING * 3, textAlign: "center", color: colors.textMuted }}>
-            {loading ? "Loading catalog..." : "No datasets found"}
+          <div style={{ padding: SP * 6, textAlign: "center", color: colors.textMuted, fontSize: 10 }}>
+            {loading ? "Loading catalog\u2026" : "No datasets found"}
           </div>
         ) : (
-          <table style={styles.table}>
+          <table style={s.table}>
             <thead>
               <tr>
-                <th style={styles.th}>Name</th>
-                <th style={styles.th}>Technique</th>
-                <th style={styles.th}>Shape</th>
-                <th style={styles.th}>Size</th>
+                <th style={s.th}>Name</th>
+                <th style={s.th}>Technique</th>
+                <th style={s.th}>Shape</th>
+                <th style={s.th}>Size</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((d) => {
-                const isSelected = d.name === selectedName;
-                const isLoaded = d.name === loadedName;
-                const rowBg = isSelected
-                  ? colors.bgAlt
-                  : "transparent";
+                const sel = d.name === selectedName;
+                const loaded = d.name === loadedName;
+                const techColor = TECHNIQUE_COLORS[d.technique] || colors.textMuted;
 
                 return (
                   <tr
@@ -315,43 +296,37 @@ function DataBrowser() {
                     onClick={() => handleRowClick(d.name)}
                     style={{
                       cursor: "pointer",
-                      background: rowBg,
+                      background: sel ? colors.bgAlt : "transparent",
+                      borderLeft: sel ? `2px solid ${colors.accent}` : "2px solid transparent",
                     }}
                     onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = colors.bgAlt;
+                      if (!sel) e.currentTarget.style.background = colors.bgAlt;
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = "transparent";
+                      if (!sel) e.currentTarget.style.background = "transparent";
                     }}
                   >
-                    <td style={styles.td}>
-                      <span style={{ fontWeight: isSelected ? 600 : 400 }}>{d.name}</span>
-                      {isLoaded && (
+                    <td style={s.td}>
+                      <span style={{ fontWeight: sel ? 600 : 400 }}>{d.name}</span>
+                      {loaded && (
                         <span
                           style={{
-                            ...styles.badge,
+                            ...s.badge,
                             marginLeft: 6,
                             color: "#4caf50",
-                            borderColor: "#4caf50",
                           }}
                         >
-                          loaded
+                          \u2713
                         </span>
                       )}
                     </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.badge,
-                          borderColor: TECHNIQUE_COLORS[d.technique] || colors.border,
-                          color: TECHNIQUE_COLORS[d.technique] || colors.textMuted,
-                        }}
-                      >
+                    <td style={s.td}>
+                      <span style={{ ...s.badge, color: techColor, border: `1px solid ${techColor}40` }}>
                         {d.technique}
                       </span>
                     </td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{formatShape(d.shape)}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{formatSize(d.size_mb)}</td>
+                    <td style={{ ...s.td, ...s.mono }}>{formatShape(d.shape)}</td>
+                    <td style={{ ...s.td, ...s.mono, color: colors.textMuted }}>{formatSize(d.size_mb)}</td>
                   </tr>
                 );
               })}
@@ -360,65 +335,71 @@ function DataBrowser() {
         )}
       </div>
 
-      {/* Detail panel */}
+      {/* ── Detail panel ── */}
       {selectedName && selectedInfo && (
-        <div style={styles.detail}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING }}>
+        <div style={s.detail}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SP * 2 }}>
             <span style={{ fontWeight: 600, fontSize: 11 }}>{selectedName}</span>
             <button
-              style={{
-                ...styles.loadButton,
-                opacity: loading ? 0.6 : 1,
-                cursor: loading ? "wait" : "pointer",
-              }}
+              style={{ ...s.loadBtn, opacity: loading ? 0.5 : 1, cursor: loading ? "wait" : "pointer" }}
               onClick={handleLoad}
               disabled={loading}
             >
-              {loading ? "Loading..." : loadedName === selectedName ? "Reload" : "Load"}
+              {loading ? "LOADING\u2026" : loadedName === selectedName ? "RELOAD" : "LOAD"}
             </button>
           </div>
-          <div style={styles.detailGrid}>
+          <div style={s.detailGrid}>
             {selectedInfo.description && (
               <>
-                <span style={styles.detailLabel}>Description</span>
-                <span>{selectedInfo.description}</span>
+                <span style={s.detailLabel}>Description</span>
+                <span style={{ fontSize: 10 }}>{selectedInfo.description}</span>
               </>
             )}
-            <span style={styles.detailLabel}>Technique</span>
-            <span>{selectedInfo.technique || "\u2014"}</span>
+            <span style={s.detailLabel}>Technique</span>
+            <span style={s.detailValue}>{selectedInfo.technique || "\u2014"}</span>
             {selectedInfo.data && (
               <>
-                <span style={styles.detailLabel}>Shape</span>
-                <span style={styles.detailValue}>
-                  {formatShape(selectedInfo.data.shape)}
-                </span>
-                <span style={styles.detailLabel}>Dtype</span>
-                <span style={styles.detailValue}>
-                  {selectedInfo.data.dtype || "\u2014"}
-                </span>
+                <span style={s.detailLabel}>Shape</span>
+                <span style={s.detailValue}>{formatShape(selectedInfo.data.shape)}</span>
+                <span style={s.detailLabel}>Dtype</span>
+                <span style={s.detailValue}>{selectedInfo.data.dtype || "\u2014"}</span>
               </>
             )}
             {selectedInfo.attribution && (
               <>
-                <span style={styles.detailLabel}>Contributor</span>
-                <span>{selectedInfo.attribution.contributor || "\u2014"}</span>
-                <span style={styles.detailLabel}>License</span>
-                <span>{selectedInfo.attribution.license || "\u2014"}</span>
+                <span style={s.detailLabel}>Contributor</span>
+                <span style={{ fontSize: 10 }}>{selectedInfo.attribution.contributor || "\u2014"}</span>
+                <span style={s.detailLabel}>License</span>
+                <span style={{ fontSize: 10 }}>{selectedInfo.attribution.license || "\u2014"}</span>
+              </>
+            )}
+            {selectedInfo.instrument?.microscope && (
+              <>
+                <span style={s.detailLabel}>Microscope</span>
+                <span style={{ fontSize: 10 }}>{selectedInfo.instrument.microscope}</span>
+              </>
+            )}
+            {selectedInfo.calibration?.pixel_size != null && (
+              <>
+                <span style={s.detailLabel}>Pixel size</span>
+                <span style={s.detailValue}>
+                  {selectedInfo.calibration.pixel_size} {selectedInfo.calibration.pixel_size_unit || ""}
+                </span>
               </>
             )}
           </div>
         </div>
       )}
 
-      {/* Status bar */}
-      <div style={styles.statusBar}>
+      {/* ── Status bar ── */}
+      <div style={s.statusBar}>
         <span>
           {filtered.length} dataset{filtered.length !== 1 ? "s" : ""}
-          {techniqueFilter ? ` (${techniqueFilter})` : ""}
+          {techniqueFilter ? ` \u00b7 ${techniqueFilter}` : ""}
         </span>
         {loadedName && (
           <span>
-            Loaded: <span style={{ fontFamily: MONO_FAMILY, fontWeight: 600 }}>{loadedName}</span>
+            Loaded: <span style={{ fontFamily: MONO, fontWeight: 600 }}>{loadedName}</span>
           </span>
         )}
       </div>

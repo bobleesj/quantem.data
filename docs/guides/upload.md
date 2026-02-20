@@ -1,5 +1,7 @@
 # Uploading datasets
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/upload.ipynb)
+
 All datasets in quantem.data are hosted on [Hugging Face Hub](https://huggingface.co/datasets/bobleesj/quantem-data).
 Uploads create a **Pull Request** by default — the data is reviewed before merging into the public catalog.
 
@@ -60,6 +62,37 @@ Review: https://huggingface.co/datasets/bobleesj/quantem-data/discussions/1
 ```
 
 The PR link takes you to the Hugging Face discussion page where the maintainer can review your data and metadata, then merge it.
+
+## Preview before uploading
+
+Use `preview_upload()` to validate naming, metadata, and check for duplicates before submitting:
+
+```python
+from quantem.data import preview_upload
+
+errors = preview_upload(
+    data,
+    name="silicon_110_hrtem",
+    technique="hrtem",
+    description="Silicon [110] zone axis, HRTEM at 200 kV",
+    contributor="Jane Doe",
+)
+
+if errors:
+    for e in errors:
+        print(f"  - {e}")
+else:
+    print("Ready to upload!")
+```
+
+`preview_upload()` checks:
+- Naming convention (lowercase, underscores, material-first)
+- Valid technique folder
+- Metadata schema compliance
+- Array shape consistency
+- Duplicate name detection on HF Hub
+
+Fix any errors before calling `upload()`.
 
 ## Upload from the command line
 
