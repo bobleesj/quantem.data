@@ -6,7 +6,7 @@ Works with [quantem.widget](https://bobleesj.github.io/quantem.widget/) out of t
 ## install
 
 ```bash
-pip install quantem-data
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
 ```
 
 ## quick start
@@ -40,6 +40,7 @@ Show2D(data, title=meta["description"])
 :maxdepth: 2
 :hidden:
 
+guides/index
 api/index
 changelog
 ```

@@ -20,14 +20,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      - name: Build JS
+        run: npm ci && npm run build
+
       - name: Install dependencies
         run: |
           pip install sphinx pydata-sphinx-theme numpydoc sphinx-copybutton sphinx-design myst-parser
-          pip install numpy huggingface-hub
+          pip install numpy huggingface-hub anywidget traitlets
           pip install .
 
       - name: Build docs

@@ -1,10 +1,8 @@
-# API reference
+# Guides
 
 ```{toctree}
 :maxdepth: 1
 
-registry
-schema
+upload
 browser
-cli
 ```
