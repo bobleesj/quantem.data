@@ -6,7 +6,7 @@ Works with [quantem.widget](https://bobleesj.github.io/quantem.widget/) out of t
 ## install
 
 ```bash
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
+pip install --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
 ```
 
 ## quick start

@@ -1,5 +1,7 @@
 # DataBrowser widget
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/browser.ipynb)
+
 The `DataBrowser` is an interactive Jupyter widget for browsing, filtering, and loading datasets from Hugging Face Hub — without writing any code.
 
 ## Quick start
@@ -63,7 +65,7 @@ Show2D(browser.data, title=browser.loaded_name)
 The DataBrowser works on Google Colab. Install from TestPyPI:
 
 ```python
-%pip install -q -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
+%pip install -q --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
 ```
 
 Then use it normally. The widget renders in Colab's output cells.

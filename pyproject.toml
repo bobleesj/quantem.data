@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quantem-data"
-version = "0.0.2"
+version = "0.0.2a1"
 description = "Example datasets for quantem — real electron microscopy data"
 readme = "README.md"
 license = "MIT"
