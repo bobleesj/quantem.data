@@ -17,20 +17,20 @@ def test_available_sorted():
     assert result == sorted(result)
 
 
-def test_available_contains_srtio3():
+def test_available_contains_korean_sample():
     result = available()
-    assert "srtio3_lamella" in result
+    assert "korean_sample_c1" in result
 
 
 def test_info_returns_dict():
-    meta = info("srtio3_lamella")
+    meta = info("korean_sample_c1")
     assert isinstance(meta, dict)
-    assert meta["name"] == "srtio3_lamella"
-    assert meta["technique"] == "4dstem"
+    assert meta["name"] == "korean_sample_c1"
+    assert meta["technique"] == "image"
 
 
 def test_info_has_required_fields():
-    meta = info("srtio3_lamella")
+    meta = info("korean_sample_c1")
     assert "schema_version" in meta
     assert "description" in meta
     assert "data" in meta
@@ -43,18 +43,18 @@ def test_info_unknown_raises():
 
 
 def test_load_returns_array():
-    data = load("srtio3_lamella")
+    data = load("korean_sample_c1")
     assert isinstance(data, np.ndarray)
-    assert data.shape == (32, 32, 48, 48)
+    assert data.shape == (256, 256)
     assert data.dtype == np.float32
 
 
 def test_load_with_metadata():
-    data, meta = load("srtio3_lamella", metadata=True)
+    data, meta = load("korean_sample_c1", metadata=True)
     assert isinstance(data, np.ndarray)
     assert isinstance(meta, dict)
-    assert data.shape == (32, 32, 48, 48)
-    assert meta["technique"] == "4dstem"
+    assert data.shape == (256, 256)
+    assert meta["technique"] == "image"
 
 
 def test_load_unknown_raises():
@@ -86,10 +86,10 @@ def test_list_files_type_field():
 
 
 def test_list_files_filter_by_technique():
-    result = list_files("4dstem")
+    result = list_files("image")
     assert len(result) > 0
     for f in result:
-        assert f["path"].startswith("4dstem/")
+        assert f["path"].startswith("image/")
 
 
 def test_list_files_filter_empty():

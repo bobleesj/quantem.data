@@ -14,42 +14,35 @@ pip install quantem-data
 
 ```python
 from quantem.data import load
-from quantem.widget import Show4DSTEM, Show2D
+from quantem.widget import Show2D
 
-# 4D-STEM dataset (9 MB, downloads once, cached locally)
-data = load("srtio3_lamella")
-Show4DSTEM(data, scan_shape=(32, 32))
+# load a 2D image (downloads once, cached locally)
+Show2D(load("korean_sample_c1"))
 
-# Bright-field image
-Show2D(load("srtio3_bf"))
-
-# Load with metadata for calibrated display
-data, meta = load("srtio3_lamella_hr", metadata=True)
-Show4DSTEM(data, scan_shape=meta["data"]["scan_shape"])
+# load with metadata
+data, meta = load("korean_sample_c1", metadata=True)
+Show2D(data, title=meta["description"])
 ```
 
 ## API
 
 ```python
-from quantem.data import available, info, load, load_raw, list_files
+from quantem.data import available, info, load, list_files
 
 # List datasets (optionally filter by technique)
 available()                          # all datasets
-available(technique="4dstem")        # only 4D-STEM
+available(technique="image")         # only images
 
 # Dataset metadata (no data download)
-info("srtio3_lamella")
+info("korean_sample_c1")
 
 # Load processed data as NumPy array
-data = load("srtio3_lamella")
-data, meta = load("srtio3_lamella", metadata=True)
-
-# Load original instrument files (returns local path)
-path = load_raw("arina_lamella_master")  # -> ~/.cache/huggingface/.../*.h5
+data = load("korean_sample_c1")
+data, meta = load("korean_sample_c1", metadata=True)
 
 # List all files on HF Hub
 list_files()
-list_files("4dstem")
+list_files("image")
 ```
 
 ## CLI
@@ -57,16 +50,16 @@ list_files("4dstem")
 ```bash
 # List datasets
 quantem-data list
-quantem-data list --technique 4dstem
+quantem-data list --technique image
 
 # Show metadata
-quantem-data info srtio3_lamella
+quantem-data info korean_sample_c1
 
 # List files on HF Hub
 quantem-data files
 
 # Download
-quantem-data download srtio3_lamella
+quantem-data download korean_sample_c1
 
 # Upload
 quantem-data upload my_data.npy --name silicon_110 --technique hrtem \
@@ -108,12 +101,7 @@ Dataset names follow a **material-first** convention: `{material}_{descriptor}`.
 
 | Name | Technique | What it is |
 |------|-----------|------------|
-| `srtio3_lamella` | 4dstem | STO FIB lamella |
-| `mos2_monolayer` | 4dstem | Monolayer MoS2 |
-| `silicon_110` | hrtem | Silicon [110] zone axis |
-| `graphene_pristine` | hrtem | Pristine graphene |
-| `silicon_k_edge` | eels | Silicon K-edge spectrum |
-| `gold_nanoparticle` | tomo | Au nanoparticle tilt series |
+| `korean_sample_c1` | image | Virtual image from 4D-STEM focal series |
 
 ## Technique Folders
 
@@ -136,7 +124,7 @@ Every dataset has a JSON sidecar with structured metadata. Required fields:
 - `data.shape`, `data.dtype`
 - `attribution.contributor`, `attribution.license`
 
-Optional: `instrument`, `calibration`, `processing` — see [CLAUDE.md](CLAUDE.md) for full spec.
+Optional: `instrument`, `calibration`, `processing`.
 
 ## Contributing
 

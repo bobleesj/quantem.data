@@ -8,10 +8,10 @@ Usage
 -----
 >>> from quantem.data import load, available
 >>> available()
-['srtio3_bf', 'srtio3_lamella', 'srtio3_lamella_hr', 'srtio3_mean_dp']
->>> data = load("srtio3_lamella")
+['korean_sample_c1']
+>>> data = load("korean_sample_c1")
 >>> data.shape
-(32, 32, 48, 48)
+(256, 256)
 """
 
 __version__ = "0.0.1"

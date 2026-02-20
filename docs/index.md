@@ -13,18 +13,14 @@ pip install quantem-data
 
 ```python
 from quantem.data import load
-from quantem.widget import Show4DSTEM, Show2D
+from quantem.widget import Show2D
 
-# 4D-STEM dataset (9 MB, downloads once, cached locally)
-data = load("srtio3_lamella")
-Show4DSTEM(data, scan_shape=(32, 32))
+# load a 2D image (downloads once, cached locally)
+Show2D(load("korean_sample_c1"))
 
-# bright-field image
-Show2D(load("srtio3_bf"))
-
-# load with metadata for calibrated display
-data, meta = load("srtio3_lamella_hr", metadata=True)
-Show4DSTEM(data, scan_shape=meta["data"]["scan_shape"])
+# load with metadata
+data, meta = load("korean_sample_c1", metadata=True)
+Show2D(data, title=meta["description"])
 ```
 
 ## technique folders
