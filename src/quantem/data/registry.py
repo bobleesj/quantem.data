@@ -126,6 +126,152 @@ def load_raw(name: str) -> str:
     return local
 
 
+def preview_upload(
+    data,
+    name: str,
+    technique: str,
+    metadata: dict | str | None = None,
+    description: str = "",
+    contributor: str = "",
+    license: str = "CC-BY-4.0",
+) -> list[str]:
+    """Validate and preview an upload without actually uploading.
+
+    Checks naming convention, metadata schema, technique, and shape.
+    Prints a summary of what would be uploaded. Returns a list of
+    errors (empty if everything is valid).
+
+    Parameters
+    ----------
+    data : array_like or str
+        NumPy array, or path to a ``.npy`` file.
+    name : str
+        Dataset name.
+    technique : str
+        Technique folder.
+    metadata : dict or str, optional
+        Full metadata dict, or path to a JSON file.
+    description : str
+        One-line description (used if metadata is None).
+    contributor : str
+        Who is uploading (used if metadata is None).
+    license : str
+        License string (default ``"CC-BY-4.0"``).
+
+    Returns
+    -------
+    list of str
+        Error messages. Empty list means the upload is valid.
+    """
+    import re
+
+    errors: list[str] = []
+
+    # Resolve data
+    if isinstance(data, str):
+        try:
+            arr = np.load(data)
+        except Exception as e:
+            errors.append(f"Cannot load data file: {e}")
+            print("Upload preview: FAILED")
+            for e in errors:
+                print(f"  - {e}")
+            return errors
+    else:
+        try:
+            arr = np.asarray(data, dtype=np.float32)
+        except Exception as e:
+            errors.append(f"Cannot convert data to array: {e}")
+            print("Upload preview: FAILED")
+            for e in errors:
+                print(f"  - {e}")
+            return errors
+
+    # Naming convention checks
+    if not re.match(r"^[a-z][a-z0-9_]*$", name):
+        errors.append(
+            f"Name {name!r} violates naming convention: "
+            "must be lowercase, underscores only, start with a letter"
+        )
+    if name != name.lower():
+        errors.append(f"Name must be lowercase: {name!r}")
+    if "-" in name:
+        errors.append(f"Use underscores, not hyphens: {name!r}")
+    if re.search(r"\d{4}", name):
+        errors.append(f"Don't include year in name (put it in metadata): {name!r}")
+    if re.search(r"\d+x\d+", name):
+        errors.append(f"Don't include resolution in name (put it in metadata): {name!r}")
+
+    # Resolve metadata
+    if metadata is None:
+        meta = make_template(
+            name=name,
+            technique=technique,
+            shape=arr.shape,
+            dtype=str(arr.dtype),
+            description=description,
+            contributor=contributor,
+            license=license,
+        )
+    elif isinstance(metadata, str):
+        try:
+            with open(metadata) as f:
+                meta = json.load(f)
+        except Exception as e:
+            errors.append(f"Cannot read metadata file: {e}")
+            meta = {}
+    else:
+        meta = dict(metadata)
+
+    meta.setdefault("schema_version", SCHEMA_VERSION)
+    meta.setdefault("name", name)
+    meta.setdefault("technique", technique)
+
+    # Schema validation
+    schema_errors = validate(meta)
+    errors.extend(schema_errors)
+
+    # Shape match
+    meta_shape = meta.get("data", {}).get("shape")
+    if meta_shape and tuple(meta_shape) != tuple(arr.shape):
+        errors.append(
+            f"Metadata shape {meta_shape} does not match array shape {list(arr.shape)}"
+        )
+
+    # Check for name collision
+    try:
+        existing = available()
+        if name in existing:
+            errors.append(
+                f"Dataset {name!r} already exists. Choose a different name "
+                "or use update_metadata() to modify existing metadata."
+            )
+    except Exception:
+        pass  # offline — skip collision check
+
+    # Print summary
+    size_mb = arr.nbytes / (1024 * 1024)
+    print("Upload preview")
+    print(f"  Name:        {name}")
+    print(f"  Technique:   {technique}")
+    print(f"  Shape:       {list(arr.shape)}")
+    print(f"  Dtype:       {arr.dtype}")
+    print(f"  Size:        {size_mb:.1f} MB")
+    print(f"  Description: {meta.get('description', '') or '(empty)'}")
+    print(f"  Contributor: {meta.get('attribution', {}).get('contributor', '') or '(empty)'}")
+    print(f"  License:     {meta.get('attribution', {}).get('license', '')}")
+    print(f"  Destination: {REPO_ID}/{technique}/{name}.npy")
+
+    if errors:
+        print(f"\n  ERRORS ({len(errors)}):")
+        for err in errors:
+            print(f"    - {err}")
+    else:
+        print("\n  Ready to upload. Run upload() to create a PR.")
+
+    return errors
+
+
 def upload(
     data,
     name: str,
