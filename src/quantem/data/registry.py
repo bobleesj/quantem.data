@@ -135,8 +135,12 @@ def upload(
     contributor: str = "",
     license: str = "CC-BY-4.0",
     token: str | None = None,
+    create_pr: bool = True,
 ):
     """Upload a dataset with metadata to HF Hub.
+
+    By default creates a Pull Request for review. Set ``create_pr=False``
+    to commit directly (requires write access).
 
     Parameters
     ----------
@@ -157,7 +161,12 @@ def upload(
         License string (default ``"CC-BY-4.0"``).
     token : str, optional
         HF token. If None, uses cached login.
+    create_pr : bool
+        If True (default), create a Pull Request instead of committing
+        directly. The PR can be reviewed and merged on HF Hub.
     """
+    from huggingface_hub import CommitOperationAdd
+
     # Resolve data
     if isinstance(data, str):
         arr = np.load(data)
@@ -200,7 +209,7 @@ def upload(
             f"Metadata shape {meta_shape} does not match array shape {list(arr.shape)}"
         )
 
-    # Upload
+    # Upload both files in a single atomic commit
     api = _api()
     npy_remote = f"{technique}/{name}.npy"
     json_remote = f"{technique}/{name}.json"
@@ -213,28 +222,33 @@ def upload(
         with open(json_local, "w") as f:
             json.dump(meta, f, indent=2)
 
-        api.upload_file(
-            path_or_fileobj=npy_local,
-            path_in_repo=npy_remote,
+        operations = [
+            CommitOperationAdd(path_in_repo=npy_remote, path_or_fileobj=npy_local),
+            CommitOperationAdd(path_in_repo=json_remote, path_or_fileobj=json_local),
+        ]
+
+        commit_msg = f"Add {name} ({technique}, {list(arr.shape)}, {arr.nbytes / (1024**2):.1f} MB)"
+        result = api.create_commit(
             repo_id=REPO_ID,
             repo_type="dataset",
+            operations=operations,
+            commit_message=commit_msg,
             token=token,
-        )
-        api.upload_file(
-            path_or_fileobj=json_local,
-            path_in_repo=json_remote,
-            repo_id=REPO_ID,
-            repo_type="dataset",
-            token=token,
+            create_pr=create_pr,
         )
 
-    print(f"Uploaded {name} ({arr.nbytes / (1024**2):.1f} MB) to {REPO_ID}")
+    if create_pr:
+        print(f"Created PR to add {name} ({arr.nbytes / (1024**2):.1f} MB)")
+        print(f"Review: {result.pr_url}")
+    else:
+        print(f"Uploaded {name} ({arr.nbytes / (1024**2):.1f} MB) to {REPO_ID}")
 
 
-def update_metadata(name: str, updates: dict, token: str | None = None):
+def update_metadata(name: str, updates: dict, token: str | None = None, create_pr: bool = True):
     """Update metadata fields for an existing dataset.
 
     Downloads the current JSON, merges your changes, re-uploads.
+    By default creates a Pull Request for review.
 
     Parameters
     ----------
@@ -244,7 +258,12 @@ def update_metadata(name: str, updates: dict, token: str | None = None):
         Fields to update. Nested dicts are merged (not replaced).
     token : str, optional
         HF token. If None, uses cached login.
+    create_pr : bool
+        If True (default), create a Pull Request instead of committing
+        directly. The PR can be reviewed and merged on HF Hub.
     """
+    from huggingface_hub import CommitOperationAdd
+
     meta = _download_metadata(name)
     technique = meta["technique"]
     json_remote = f"{technique}/{name}.json"
@@ -268,15 +287,24 @@ def update_metadata(name: str, updates: dict, token: str | None = None):
         json_local = os.path.join(tmpdir, f"{name}.json")
         with open(json_local, "w") as f:
             json.dump(meta, f, indent=2)
-        api.upload_file(
-            path_or_fileobj=json_local,
-            path_in_repo=json_remote,
+
+        operations = [
+            CommitOperationAdd(path_in_repo=json_remote, path_or_fileobj=json_local),
+        ]
+        result = api.create_commit(
             repo_id=REPO_ID,
             repo_type="dataset",
+            operations=operations,
+            commit_message=f"Update metadata for {name}",
             token=token,
+            create_pr=create_pr,
         )
 
-    print(f"Updated metadata for {name}")
+    if create_pr:
+        print(f"Created PR to update metadata for {name}")
+        print(f"Review: {result.pr_url}")
+    else:
+        print(f"Updated metadata for {name}")
 
 
 def list_files(technique: str | None = None) -> list[dict]:

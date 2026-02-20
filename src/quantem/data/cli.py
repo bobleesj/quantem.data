@@ -35,6 +35,8 @@ def main():
     p_upload.add_argument("--contributor", default="", help="Contributor name")
     p_upload.add_argument("--metadata", help="Path to metadata JSON file")
     p_upload.add_argument("--token", help="HF token")
+    p_upload.add_argument("--direct", action="store_true",
+                          help="Commit directly instead of creating a PR")
 
     # download
     p_download = sub.add_parser("download", help="Download a dataset")
@@ -82,6 +84,7 @@ def main():
             description=args.description,
             contributor=args.contributor,
             token=args.token,
+            create_pr=not args.direct,
         )
 
     elif args.command == "download":
