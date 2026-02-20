@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-jupyter-builder>=0.5.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "quantem-data"
-version = "0.0.1"
+version = "0.0.2"
 description = "Example datasets for quantem — real electron microscopy data"
 readme = "README.md"
 license = "MIT"
@@ -20,6 +20,8 @@ classifiers = [
 dependencies = [
     "numpy>=2.0.0",
     "huggingface-hub>=0.20.0",
+    "anywidget>=0.9.0",
+    "traitlets>=5.0.0",
 ]
 
 [project.urls]
@@ -33,6 +35,13 @@ quantem-data = "quantem.data.cli:main"
 
 [tool.hatch.build]
 only-packages = true
+artifacts = ["src/quantem/data/static/*"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quantem"]
+
+[tool.hatch.build.hooks.jupyter-builder]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = ["src/quantem/data/static/browser.js"]
+skip-if-exists = ["src/quantem/data/static/browser.js"]
+dependencies = ["hatch-jupyter-builder>=0.5.0"]

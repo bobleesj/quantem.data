@@ -11,3 +11,4 @@ build/
 docs/_build/
 .DS_Store
 *.npy
+node_modules/

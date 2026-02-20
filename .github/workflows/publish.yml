@@ -13,12 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      - name: Install JS dependencies and build
+        run: npm ci && npm run build
+
       - name: Install build tools
-        run: pip install build
+        run: pip install build hatch-jupyter-builder
 
       - name: Build sdist and wheel
         run: python -m build

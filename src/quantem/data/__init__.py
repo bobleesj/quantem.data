@@ -14,7 +14,7 @@ Usage
 (256, 256)
 """
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 from quantem.data.registry import (
     available,
@@ -26,6 +26,7 @@ from quantem.data.registry import (
     list_files,
 )
 from quantem.data.schema import validate, make_template
+from quantem.data.browser import DataBrowser
 
 __all__ = [
     "__version__",
@@ -38,4 +39,5 @@ __all__ = [
     "list_files",
     "validate",
     "make_template",
+    "DataBrowser",
 ]
