@@ -22,6 +22,12 @@ dependencies = [
     "huggingface-hub>=0.20.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/bobleesj/quantem.data"
+Documentation = "https://bobleesj.github.io/quantem.data/"
+Repository = "https://github.com/bobleesj/quantem.data"
+"Hugging Face" = "https://huggingface.co/datasets/bobleesj/quantem-data"
+
 [project.scripts]
 quantem-data = "quantem.data.cli:main"
 
