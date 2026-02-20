@@ -4,7 +4,11 @@ Real electron microscopy datasets for [quantem.widget](https://github.com/boblee
 
 Data hosted on [Hugging Face Hub](https://huggingface.co/datasets/bobleesj/quantem-data). Works on Google Colab out of the box.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/browser.ipynb)
+| Notebook | Description |
+|----------|-------------|
+| [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/browser.ipynb) | **Browse & download** — interactive DataBrowser widget |
+| [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/upload.ipynb) | **Upload via PR** — contribute data to HF Hub |
+| [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/demo.ipynb) | **Quick demo** — API usage with quantem.widget |
 
 ## Install
 
