@@ -4,10 +4,28 @@ Real electron microscopy datasets for [quantem.widget](https://github.com/boblee
 
 Data hosted on [Hugging Face Hub](https://huggingface.co/datasets/bobleesj/quantem-data). Works on Google Colab out of the box.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bobleesj/quantem.data/blob/main/notebooks/browser.ipynb)
+
 ## Install
 
 ```bash
-pip install quantem-data
+pip install --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
+```
+
+## DataBrowser widget
+
+Browse, filter, and load datasets interactively in a notebook:
+
+```python
+from quantem.data import DataBrowser
+
+browser = DataBrowser()
+browser  # displays interactive widget
+
+# After selecting and loading a dataset:
+browser.data       # NumPy array
+browser.metadata   # metadata dict
+browser.loaded_name  # dataset name
 ```
 
 ## Usage with quantem.widget
@@ -45,6 +63,34 @@ list_files()
 list_files("image")
 ```
 
+## Upload (creates a PR for review)
+
+Uploads create a Pull Request on Hugging Face Hub by default. The data is reviewed before merging.
+
+```python
+from quantem.data import preview_upload, upload
+
+# Step 1: preview — validates naming, metadata, checks for duplicates
+preview_upload(
+    my_array,
+    name="gold_nanoparticle",
+    technique="hrtem",
+    description="Gold nanoparticle HRTEM at 200 kV",
+    contributor="Jane Doe",
+)
+
+# Step 2: upload — creates PR on HF Hub
+upload(
+    my_array,
+    name="gold_nanoparticle",
+    technique="hrtem",
+    description="Gold nanoparticle HRTEM at 200 kV",
+    contributor="Jane Doe",
+)
+# → Created PR to add gold_nanoparticle (0.2 MB)
+# → Review: https://huggingface.co/datasets/bobleesj/quantem-data/discussions/1
+```
+
 ## CLI
 
 ```bash
@@ -61,32 +107,9 @@ quantem-data files
 # Download
 quantem-data download korean_sample_c1
 
-# Upload
+# Upload (creates PR by default)
 quantem-data upload my_data.npy --name silicon_110 --technique hrtem \
     --description "Silicon [110] HRTEM" --contributor "Jane Doe"
-```
-
-## Upload (Python API)
-
-```python
-from quantem.data import upload, update_metadata
-
-# Upload with auto-generated metadata
-upload(
-    my_array,
-    name="mos2_monolayer",
-    technique="4dstem",
-    description="Monolayer MoS2, 80 keV, Medipix3",
-    contributor="Jane Doe",
-)
-
-# Upload with pre-built metadata JSON
-upload(my_array, name="mos2_monolayer", technique="4dstem", metadata="mos2.json")
-
-# Edit metadata for an existing dataset
-update_metadata("mos2_monolayer", {
-    "calibration": {"pixel_size": 0.98, "pixel_size_unit": "nm"},
-})
 ```
 
 ## Naming Convention
@@ -98,10 +121,6 @@ Dataset names follow a **material-first** convention: `{material}_{descriptor}`.
 - **Descriptor second** — morphology, orientation, or qualifier (`lamella`, `monolayer`, `110`, `nanoparticle`)
 - **Lab suffix only when needed** — to disambiguate (`srtio3_lamella_ncem` vs `srtio3_lamella_oxford`)
 - **No resolution, binning, or year** — those belong in the JSON metadata
-
-| Name | Technique | What it is |
-|------|-----------|------------|
-| `korean_sample_c1` | image | Virtual image from 4D-STEM focal series |
 
 ## Technique Folders
 
@@ -116,21 +135,20 @@ Dataset names follow a **material-first** convention: `{material}_{descriptor}`.
 | `complex/` | Ptychography | ShowComplex2D |
 | `raw/` | Original instrument files | — |
 
-## Metadata JSON Schema
+## Versioning
 
-Every dataset has a JSON sidecar with structured metadata. Required fields:
+Follows [PEP 440](https://packaging.python.org/en/latest/discussions/versioning/) with semantic versioning.
 
-- `schema_version`, `name`, `technique`, `description`
-- `data.shape`, `data.dtype`
-- `attribution.contributor`, `attribution.license`
+Pre-release progression: `0.0.2a1` → `0.0.2a2` → `0.0.2b1` → `0.0.2rc1` → `0.0.2` (stable).
 
-Optional: `instrument`, `calibration`, `processing`.
+Each tag is immutable — never force-push or re-tag. Install pre-releases with `--pre`.
 
 ## Contributing
 
-We welcome contributions of real electron microscopy data. See the upload API above, or contact us via [GitHub Issues](https://github.com/bobleesj/quantem.data/issues).
+We welcome contributions of real electron microscopy data. Use `preview_upload()` to validate, then `upload()` to create a PR on HF Hub.
 
 Requirements:
 - Data must be shareable under an open license (CC-BY-4.0 recommended)
 - Include instrument and sample information in the metadata JSON
 - Follow the naming convention above
+- All uploads go through PR review
