@@ -12,6 +12,12 @@ Data hosted on [Hugging Face Hub](https://huggingface.co/datasets/bobleesj/quant
 pip install --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data
 ```
 
+To also visualize datasets with [quantem.widget](https://github.com/bobleesj/quantem.widget) (recommended):
+
+```bash
+pip install --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ quantem-data quantem-widget
+```
+
 ## DataBrowser widget
 
 Browse, filter, and load datasets interactively in a notebook:
