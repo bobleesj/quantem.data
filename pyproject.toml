@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quantem-data"
+version = "0.0.1"
+description = "Example datasets for quantem — real electron microscopy data"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+keywords = ["electron-microscopy", "4dstem", "datasets", "quantem"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "numpy>=2.0.0",
+    "huggingface-hub>=0.20.0",
+]
+
+[project.scripts]
+quantem-data = "quantem.data.cli:main"
+
+[tool.hatch.build]
+only-packages = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quantem"]
