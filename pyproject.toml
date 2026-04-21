@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quantem.data"
+version = "0.0.1"
+description = "Data utilities and metadata parsing for quantem-data"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "h5py>=3.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quantem"]
+
