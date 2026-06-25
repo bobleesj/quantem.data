@@ -26,6 +26,11 @@ from pathlib import Path
 
 DEFAULT_REPO = "bobleesj/quantem-data"
 
+# The only buckets that hold shareable DATASETS. Other top-level folders in the repo
+# (e.g. `notebooks/` for Colab demos) are not data and must not show up in list / status
+# / tree / browse as if they were downloadable acquisitions.
+DATA_BUCKETS = ("4dstem", "haadf")
+
 
 def _resolve_repo(repo: str | None) -> str:
     """Pick the dataset repo: explicit arg, else env, else the project default."""
@@ -70,8 +75,9 @@ def upload(path: str | Path, name: str | None = None, *,
     (scan sampling, FOV, voltage, semiangle): the detector h5 only knows detector
     pixels, so a collaborator who downloads the data would otherwise have no FOV.
     When given, it is merged with auto-derived ``det_shape``/``scan_shape`` (read
-    from the master) and written as a ``quantem_meta.json`` sidecar travelling with
-    the dataset; ``read_meta`` returns it on the other side.
+    from the master) and written as a ``meta.json`` sidecar travelling with the
+    dataset; ``read_meta`` returns it on the other side (it also reads the older
+    ``quantem_meta.json`` name so existing datasets keep working).
     """
     hub = _hub()
     src = Path(path)
@@ -140,13 +146,13 @@ def _upload_meta(hub, repo_id: str, folder: str, name: str,
                  sidecar: dict, *, is_dir: bool) -> None:
     """Write the calibration sidecar next to the dataset.
 
-    Folder dataset -> ``<bucket>/<name>/quantem_meta.json`` inside the folder
-    (download returns the dir, so it rides along). File dataset -> a sibling
+    Folder dataset -> ``<bucket>/<name>/meta.json`` inside the folder (download
+    returns the dir, so it rides along). File dataset -> a sibling
     ``<bucket>/<name>.json`` (the same stem ``delete`` already removes).
     """
     import json  # noqa: PLC0415
     import tempfile
-    path_in_repo = (f"{folder}/{name}/quantem_meta.json" if is_dir
+    path_in_repo = (f"{folder}/{name}/meta.json" if is_dir
                     else f"{folder}/{name}.json")
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
         json.dump(sidecar, fh, indent=2)
@@ -253,7 +259,7 @@ def list_datasets(*, repo: str | None = None) -> list[str]:
     names = set()
     for f in hub.list_repo_files(repo_id=repo_id, repo_type="dataset"):
         parts = f.split("/")
-        if len(parts) < 2 or parts[1].startswith("placeholder_"):
+        if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
             continue
         if len(parts) >= 3:
             names.add(f"{parts[0]}/{parts[1]}")
@@ -323,7 +329,7 @@ def status(*, repo: str | None = None) -> dict:
         if size is None:
             continue  # folder entry, not a file
         parts = entry.path.split("/")
-        if len(parts) < 2 or parts[1].startswith("placeholder_"):
+        if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
             continue
         if len(parts) >= 3:
             key = f"{parts[0]}/{parts[1]}"
