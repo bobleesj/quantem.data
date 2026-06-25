@@ -346,3 +346,88 @@ def status(*, repo: str | None = None) -> dict:
         "cache_dir": str(cache_dir),
         "cached_mb": cached_mb,
     }
+
+
+# --- discovery: structure + visual browse (look before a multi-GB download) ---
+
+def _by_bucket(repo: str | None = None) -> tuple[dict, dict]:
+    """``status()`` datasets grouped by bucket (top-level data type). Returns (groups, snapshot)."""
+    snap = status(repo=repo)
+    groups: dict[str, list[dict]] = {}
+    for d in snap["datasets"]:
+        groups.setdefault(d["name"].split("/", 1)[0], []).append(d)
+    return groups, snap
+
+
+def tree(*, repo: str | None = None) -> None:
+    """Print the shared repo grouped by bucket (data type) with sizes: the folder structure
+    at a glance, so a user can pick a dataset without opening Hugging Face in a browser."""
+    groups, snap = _by_bucket(repo=repo)
+    print(f"{snap['repo']}  ({snap['total_mb'] / 1000:.1f} GB total, {len(snap['datasets'])} datasets)")
+    for bucket in sorted(groups):
+        items = sorted(groups[bucket], key=lambda d: d["name"])
+        gb = sum(d["size_mb"] for d in items) / 1000
+        print(f"\n{bucket}/   ({len(items)} datasets, {gb:.2f} GB)")
+        for d in items:
+            print(f"  {d['size_mb']:>9.1f} MB  {d['name'].split('/', 1)[1]}")
+
+
+def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
+    """Fetch only ``<bucket>/<name>/thumbnail.png`` (KB, not the data) and return it as a
+    base64 data URI for inline display, or None if the dataset has no thumbnail yet."""
+    import base64  # noqa: PLC0415
+    hub = _hub()
+    try:
+        path = hub.hf_hub_download(repo_id=repo_id, repo_type="dataset",
+                                   filename=f"{full_name}/thumbnail.png")
+    except Exception:
+        return None
+    b64 = base64.b64encode(Path(path).read_bytes()).decode()
+    return f"data:image/png;base64,{b64}"
+
+
+def _card_html(d: dict, repo_id: str) -> str:
+    """One dataset card: thumbnail (or placeholder) + flat name + bucket + size."""
+    full = d["name"]
+    bucket, short = full.split("/", 1)
+    uri = _thumb_data_uri(full, repo_id)
+    img = (f'<img src="{uri}" style="width:160px;height:160px;object-fit:cover;border-radius:6px">'
+           if uri else
+           '<div style="width:160px;height:160px;border-radius:6px;background:#eee;display:flex;'
+           'align-items:center;justify-content:center;color:#999;font-size:11px">no preview yet</div>')
+    return (f'<div style="display:inline-block;margin:6px;text-align:center;font-family:sans-serif">'
+            f'{img}<div style="font-weight:600;font-size:13px;margin-top:4px">{short}</div>'
+            f'<div style="font-size:11px;color:#666">{bucket} · {d["size_mb"]/1000:.2f} GB</div>'
+            f'<div style="font-size:10px;color:#999">download("{short}")</div></div>')
+
+
+class _Gallery:
+    """Renders a thumbnail grid inline in Jupyter (``_repr_html_``); prints the tree in a
+    terminal (``__repr__``). Returned by ``browse()`` so the notebook displays it directly."""
+
+    def __init__(self, repo: str | None):
+        self._groups, self._snap = _by_bucket(repo=repo)
+        self._repo_id = _resolve_repo(repo)
+
+    def _repr_html_(self) -> str:
+        parts = [f'<div style="font-family:sans-serif"><b>{self._snap["repo"]}</b> '
+                 f'— {self._snap["total_mb"]/1000:.1f} GB, {len(self._snap["datasets"])} datasets']
+        for bucket in sorted(self._groups):
+            items = sorted(self._groups[bucket], key=lambda d: d["name"])
+            parts.append(f'<h4 style="margin:12px 0 0">{bucket}/ '
+                         f'<span style="font-weight:400;color:#888">({len(items)})</span></h4>')
+            parts.append("".join(_card_html(d, self._repo_id) for d in items))
+        parts.append("</div>")
+        return "".join(parts)
+
+    def __repr__(self) -> str:
+        tree(repo=self._repo_id if self._repo_id != DEFAULT_REPO else None)
+        return ""
+
+
+def browse(*, repo: str | None = None) -> "_Gallery":
+    """Visual dataset picker: a grid of thumbnails + names + sizes you can scan before
+    downloading anything. In Jupyter it renders inline; in a terminal it prints the tree.
+    Thumbnails are tiny (KB) and fetched on the fly - the multi-GB data is never touched.
+    Pick a name and pass it to ``download(...)``."""
+    return _Gallery(repo)

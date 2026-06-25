@@ -31,7 +31,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Override the dataset repo (else $QUANTEM_DATA_REPO, else the default).")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("list", help="List every shared dataset name.")
+    sub.add_parser("list", help="List every shared dataset name (flat, one per line).")
+    sub.add_parser("tree", help="Datasets grouped by bucket (data type) with sizes - the structure at a glance.")
     sub.add_parser("status", help="Repo summary: datasets, file counts, sizes.")
 
     p_meta = sub.add_parser("meta", help="Print a dataset's calibration sidecar (or 'no metadata').")
@@ -63,6 +64,9 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "list":
         names = hub.list_datasets(repo=args.repo)
         print("\n".join(names) if names else "(no datasets)")
+        return 0
+    if args.command == "tree":
+        hub.tree(repo=args.repo)
         return 0
     if args.command == "status":
         s = hub.status(repo=args.repo)
