@@ -1,12 +1,13 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from quantem.data.metadata import parse_velox_emd_metadata
-from quantem.data.repository import datasets_dir, list_datasets, load_dataset_metadata
+from quantem.data.repository import datasets_dir, load_dataset_metadata
 from quantem.data.sync import sync_dataset_metadata
-# Hugging Face transfer verbs. hub.list_datasets/delete are the REMOTE-repo variants
-# (they live on the ``quantem.data.hub`` submodule to avoid colliding with the local
-# registry's ``list_datasets`` above); the package-level API exposes the common ones.
-from quantem.data.hub import upload, download, read_meta, status
+# Hugging Face transfer verbs. The package-level API is the REMOTE (shared-repo) view so
+# every package-level verb means the same thing: `list_datasets` lists what's on Hugging
+# Face (matching status/download/read_meta). The LOCAL registry listing stays available as
+# `quantem.data.repository.list_datasets` for callers that want the synced-on-disk view.
+from quantem.data.hub import upload, download, read_meta, status, list_datasets
 
 try:
     __version__ = version("quantem.data")

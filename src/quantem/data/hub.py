@@ -39,6 +39,11 @@ def _hub():
     # and confuses users into thinking auth is required).
     os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
     warnings.filterwarnings("ignore", message=r"(?s).*HF_TOKEN.*")
+    # The "set a HF_TOKEN for higher rate limits" nudge on public downloads comes through
+    # the logging system, not warnings.warn, so the filter above misses it. Mute the hub
+    # logger to ERROR so a normal public download is quiet (real errors still surface).
+    import logging  # noqa: PLC0415
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
     try:
         import huggingface_hub  # noqa: PLC0415
     except ImportError as exc:
