@@ -5,11 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "quantem.data"
 version = "0.0.1"
-description = "Data utilities and metadata parsing for quantem-data"
+description = "Dataset distribution + metadata for quantem: Hugging Face upload/download and Velox EMD parsing"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "h5py>=3.10",
+    "huggingface_hub>=0.20",   # hub.py: shared 4D-STEM / HAADF dataset transfer
 ]
 
 [tool.hatch.build.targets.wheel]

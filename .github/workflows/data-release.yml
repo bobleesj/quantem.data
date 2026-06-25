@@ -1,0 +1,84 @@
+name: Data release
+
+on:
+  push:
+    tags:
+      - "data-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: data-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  testpypi:
+    name: Build and publish quantem.data
+    runs-on: ubuntu-latest
+    environment: testpypi
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve data version from tag
+        id: version
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          match = re.fullmatch(r"data-v(?P<version>\d+\.\d+\.\d+(?:rc\d+|\.post\d+)?)", tag)
+          if match is None:
+              raise SystemExit(
+                  f"Expected tag data-vX.Y.Z, data-vX.Y.ZrcN, or data-vX.Y.Z.postN; got {tag!r}"
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"version={match.group('version')}", file=output)
+          PY
+
+      - name: Stamp data package version
+        env:
+          DATA_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path("pyproject.toml")
+          text = path.read_text(encoding="utf-8")
+          version = os.environ["DATA_VERSION"]
+          updated, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Expected exactly one project.version field")
+          path.write_text(updated, encoding="utf-8")
+          PY
+
+      - name: Build data distributions
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build . --wheel --sdist --outdir dist
+
+      - name: Check data distributions
+        run: python -m twine check dist/*
+
+      - name: Publish data to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
