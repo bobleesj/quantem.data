@@ -166,7 +166,9 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     target = None
     for f in hub.list_repo_files(repo_id=repo_id, repo_type="dataset"):
         parts = f.split("/")
-        if len(parts) == 3 and parts[1] == name and parts[2] == "quantem_meta.json":
+        # `quantem_meta.json` is the current sidecar name; `meta.json` is a legacy
+        # name some early uploads used - accept both so older datasets stay readable.
+        if len(parts) == 3 and parts[1] == name and parts[2] in ("quantem_meta.json", "meta.json"):
             target = f
             break
         if len(parts) == 2 and f.endswith(".json") and Path(parts[1]).stem == name:
@@ -204,7 +206,9 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
         elif len(parts) == 2 and Path(parts[1]).stem == name and not f.endswith(".json"):
             candidates[f] = "file"  # .json is a sidecar of the data file, not a rival dataset
     if not candidates:
-        raise FileNotFoundError(f"{name!r} not found in {repo_id}. Run `live data list`.")
+        raise FileNotFoundError(
+            f"{name!r} not found in {repo_id}. Call quantem.data.hub.list_datasets() "
+            "(or `quantem-data list`) to see available names.")
     if len(candidates) > 1:
         raise ValueError(
             f"{name!r} is ambiguous in {repo_id}: {sorted(candidates)}. "
@@ -273,7 +277,9 @@ def delete(name: str, *, repo: str | None = None) -> list[str]:
             file_groups.setdefault(parts[0], []).append(f)
     locations = list(dir_locs) + [f"{b}/{name}" for b in file_groups]
     if not locations:
-        raise FileNotFoundError(f"{name!r} not found in {repo_id}. Run `live data list`.")
+        raise FileNotFoundError(
+            f"{name!r} not found in {repo_id}. Call quantem.data.hub.list_datasets() "
+            "(or `quantem-data list`) to see available names.")
     if len(locations) > 1:
         raise ValueError(f"{name!r} is ambiguous in {repo_id}: {sorted(locations)}. Delete one explicitly.")
     deleted = []

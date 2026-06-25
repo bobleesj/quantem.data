@@ -14,6 +14,9 @@ dependencies = [
     "huggingface_hub>=0.20",   # hub.py: shared 4D-STEM / HAADF dataset transfer
 ]
 
+[project.scripts]
+quantem-data = "quantem.data.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/quantem"]
 
