@@ -378,14 +378,19 @@ def tree(*, repo: str | None = None) -> None:
             print(f"  {d['size_mb']:>9.1f} MB  {d['name'].split('/', 1)[1]}")
 
 
+THUMB_DIR = ".thumbnails"  # top-level tree, OUTSIDE the data buckets, so a thumbnail
+# never looks like a dataset folder (a `<bucket>/<name>/thumbnail.png` made single-file
+# datasets ambiguous with their data file in `download`).
+
+
 def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
-    """Fetch only ``<bucket>/<name>/thumbnail.png`` (KB, not the data) and return it as a
+    """Fetch only ``.thumbnails/<bucket>/<name>.png`` (KB, not the data) and return it as a
     base64 data URI for inline display, or None if the dataset has no thumbnail yet."""
     import base64  # noqa: PLC0415
     hub = _hub()
     try:
         path = hub.hf_hub_download(repo_id=repo_id, repo_type="dataset",
-                                   filename=f"{full_name}/thumbnail.png")
+                                   filename=f"{THUMB_DIR}/{full_name}.png")
     except Exception:
         return None
     b64 = base64.b64encode(Path(path).read_bytes()).decode()
