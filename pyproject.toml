@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quantem.data"
-version = "0.0.1rc2"
+version = "0.0.1rc3"
 description = "Dataset distribution + metadata for quantem: Hugging Face upload/download and Velox EMD parsing"
 license = "MIT"
 license-files = ["LICENSE"]
