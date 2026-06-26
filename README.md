@@ -41,9 +41,31 @@ example for each field) and shows you the result before writing:
 
 ```bash
 quantem-data upload ./gold_512        # prompts for voltage, semiangle, sample, date, ...
-quantem-data template 4dstem > cal.json        # an example to fill in, never a blank file
 quantem-data upload scan.emd --meta cal.json   # or script it with a JSON sidecar
 quantem-data upload scan.emd --no-input        # or attach nothing
+```
+
+### Metadata template
+
+Don't start from a blank file - `template` prints a filled example you edit, then pass to
+`--meta`:
+
+```bash
+quantem-data template 4dstem > cal.json   # or: template haadf
+```
+
+```json
+{
+  "modality": "4dstem",
+  "voltage_kV": 300,
+  "semiangle_mrad": 25,
+  "source": "ncem",
+  "sample": "gold nanoparticles",
+  "date": "2026-06-25",
+  "scan_sampling_A": 0.2,
+  "magnification_MX": 1.3,
+  "facility": "ncem"
+}
 ```
 
 Or from Python:
