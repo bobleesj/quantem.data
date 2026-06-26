@@ -39,9 +39,20 @@ def test_prompt_warns_but_keeps_going_when_required_is_skipped(monkeypatch, caps
 def test_prompt_skips_fields_already_read_from_the_file(monkeypatch):
     # voltage + date auto-parsed from a Velox .emd, so the operator is asked only for the rest
     _answers(monkeypatch, ["Jane Doe", "Colin", "gold", "", ""])  # operators, pi, sample, pixel, facility
-    meta = cli._prompt_meta("gold", "haadf", from_file={"voltage_kV": 300.0, "date": "2023-11-14"})
+    meta = cli._prompt_meta("gold", "haadf", known={"voltage_kV": 300.0, "date": "2023-11-14"})
     assert "voltage_kV" not in meta and "date" not in meta  # not asked; from the file
     assert meta["operators"] == ["Jane Doe"]
+
+
+def test_upload_uses_facility_from_env_without_asking(monkeypatch, tmp_path):
+    monkeypatch.setenv("QUANTEM_FACILITY", "ncem")
+    img = tmp_path / "gold.tif"
+    img.write_bytes(b"x")
+    captured = _capture_upload(monkeypatch)
+    # haadf order with facility supplied by env: voltage, operators, pi, sample, date, pixel, confirm
+    _answers(monkeypatch, ["300", "Jane Doe", "Colin", "gold", "2026-06-25", "", "y"])
+    assert cli.main(["upload", str(img)]) == 0
+    assert captured["meta"]["facility"] == "ncem"  # came from the env, never prompted
 
 
 def test_ask_reprompts_until_a_number_parses(monkeypatch):

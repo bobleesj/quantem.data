@@ -15,6 +15,7 @@ example for each field) so the user never has to hand-write a sidecar; pass ``--
 to script it, or ``--no-input`` to skip the prompts entirely. Metadata is human-readable YAML.
 Every command is a thin wrapper over the ``quantem.data`` verbs so the CLI and API never drift."""
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -149,10 +150,13 @@ def _upload(args: argparse.Namespace) -> int:
     elif args.no_input or not sys.stdin.isatty():
         meta = None  # scripted / piped: attach nothing, don't block on a prompt
     else:
-        from_file = auto_meta(args.path)  # voltage/semiangle/... a Velox .emd already carries
-        meta = _prompt_meta(name, folder, from_file)
-        full = {**from_file, **meta}  # upload re-derives from_file; this is just the preview
-        print(f"\nUploading '{name}' to {folder}/ with: {full or '(no calibration)'}")
+        from_file = auto_meta(args.path)  # voltage/semiangle/date/... a Velox .emd already carries
+        env = {"facility": os.environ["QUANTEM_FACILITY"]} if os.environ.get("QUANTEM_FACILITY") else {}
+        known = {**from_file, **env}  # neither needs asking
+        prompted = _prompt_meta(name, folder, known)
+        # upload() re-derives only from_file; env defaults must be carried into the sidecar here
+        meta = {**env, **prompted}
+        print(f"\nUploading '{name}' to {folder}/ with: {({**from_file, **meta}) or '(no calibration)'}")
         if input("Proceed? [y/N]: ").strip().lower() not in ("y", "yes"):
             print("aborted.")
             return 1
@@ -169,21 +173,21 @@ def _template_meta(modality: str) -> dict:
     return {"modality": modality, **{key: example for key, example, _, _ in _PROMPT_FIELDS[modality]}}
 
 
-def _prompt_meta(name: str, folder: str, from_file: dict | None = None) -> dict:
-    """Ask the operator only for the calibration the file does NOT already carry, one field at
-    a time with an example and a required/optional tag; Enter skips a field (present = known).
-    Fields in ``from_file`` (auto-parsed from a Velox .emd / Arina master) are shown, not asked
-    again - that is what makes most uploads just-confirm. Missing required fields are warned
-    about, not blocked."""
-    from_file = from_file or {}
+def _prompt_meta(name: str, folder: str, known: dict | None = None) -> dict:
+    """Ask the operator only for the calibration not already KNOWN, one field at a time with an
+    example and a required/optional tag; Enter skips a field (present = known). Fields in
+    ``known`` (auto-parsed from a Velox .emd / Arina master, or a ``QUANTEM_FACILITY`` default)
+    are shown, not asked again - that is what makes most uploads just-confirm. Missing required
+    fields are warned about, not blocked."""
+    known = known or {}
     fields = _PROMPT_FIELDS.get(folder) or _PROMPT_FIELDS["haadf"]
     print(f"Describe '{name}' ({folder}). Press Enter to skip any field.")
-    if from_file:
-        print(f"  read from the file (not asked): {from_file}")
+    if known:
+        print(f"  already known (not asked): {known}")
     meta = {key: _ask(key, example, cast, required)
-            for key, example, cast, required in fields if key not in from_file}
+            for key, example, cast, required in fields if key not in known}
     missing = [key for key, _, _, required in fields
-               if required and key not in from_file and meta.get(key) is None]
+               if required and key not in known and meta.get(key) is None]
     if missing:
         print(f"  warning: missing recommended fields {missing} - uploading without them.")
     return {key: value for key, value in meta.items() if value is not None}

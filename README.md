@@ -69,8 +69,10 @@ magnification_MX: 1.3
 facility: ncem
 ```
 
-Most of this is filled automatically when the file already carries it (a Velox `.emd`), so an
-interactive `upload` only asks for what's missing. `--meta` accepts YAML or JSON.
+Most of this is filled automatically when the file already carries it (a Velox `.emd` provides
+voltage / semiangle / magnification / FOV / scan shape / date), so an interactive `upload` only
+asks for what's missing. Set `QUANTEM_FACILITY=ncem` to skip the facility prompt too. `--meta`
+accepts YAML or JSON.
 
 Or from Python:
 
