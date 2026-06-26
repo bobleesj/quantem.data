@@ -11,7 +11,13 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "h5py>=3.10",
-    "huggingface_hub>=0.20",   # hub.py: shared 4D-STEM / HAADF dataset transfer
+    "huggingface_hub>=0.20",   # huggingface.py: shared 4D-STEM / HAADF dataset transfer
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "numpy>=1.24",
 ]
 
 [project.scripts]
@@ -19,4 +25,7 @@ quantem-data = "quantem.data.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quantem"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 

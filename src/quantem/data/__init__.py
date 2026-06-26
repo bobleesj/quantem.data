@@ -1,13 +1,24 @@
+"""quantem.data: share 4D-STEM / HAADF datasets through one Hugging Face repo.
+
+The whole API is a handful of verbs on this package. The most common one:
+
+    from quantem.data import load
+    ds = load("gold_drift_0deg")   # downloads, then returns the data ready to use
+
+Implementation lives in ``quantem.data.huggingface``; this module is just the facade.
+"""
 from importlib.metadata import PackageNotFoundError, version
 
-from quantem.data.metadata import parse_velox_emd_metadata
-from quantem.data.repository import datasets_dir, load_dataset_metadata
-from quantem.data.sync import sync_dataset_metadata
-# Hugging Face transfer verbs. The package-level API is the REMOTE (shared-repo) view so
-# every package-level verb means the same thing: `list_datasets` lists what's on Hugging
-# Face (matching status/download/read_meta). The LOCAL registry listing stays available as
-# `quantem.data.repository.list_datasets` for callers that want the synced-on-disk view.
-from quantem.data._remote import upload, download, read_meta, status, list_datasets, tree, browse, load
+from quantem.data.huggingface import (
+    browse,
+    download,
+    list_datasets,
+    load,
+    read_meta,
+    status,
+    tree,
+    upload,
+)
 
 try:
     __version__ = version("quantem.data")
@@ -16,16 +27,12 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
-    "datasets_dir",
-    "list_datasets",
-    "load_dataset_metadata",
-    "parse_velox_emd_metadata",
-    "sync_dataset_metadata",
-    "upload",
+    "browse",
     "download",
+    "list_datasets",
+    "load",
     "read_meta",
     "status",
     "tree",
-    "browse",
-    "load",
+    "upload",
 ]

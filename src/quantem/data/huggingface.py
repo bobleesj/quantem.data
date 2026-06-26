@@ -132,11 +132,40 @@ def _derive_4dstem_shapes(folder: Path) -> dict:
         return {}
 
 
+def _derive_velox_meta(path: Path) -> dict:
+    """Read calibration from a Velox ``.emd`` so an uploaded HAADF carries its own voltage,
+    semiangle, magnification, FOV and scan shape - a collaborator who downloads it would
+    otherwise have none. Best-effort: returns ``{}`` if the parse fails, since a metadata
+    convenience must never block the upload itself.
+    """
+    try:
+        from quantem.data.metadata import parse_velox_emd_metadata  # noqa: PLC0415
+        parsed = parse_velox_emd_metadata(path)
+    except (OSError, KeyError, ValueError, ImportError):
+        return {}
+    scan = parsed.get("scan_size") or {}
+    mag = parsed.get("stem_magnification_x")
+    out = {
+        "voltage_kV": parsed.get("beam_energy_kv"),
+        "semiangle_mrad": parsed.get("convergence_semiangle_mrad"),
+        "magnification_MX": mag / 1e6 if mag else None,  # Velox stores plain times -> Megatimes
+        "scan_fov_nm": parsed.get("full_scan_field_of_view_nm"),
+        "scan_shape": [scan["height"], scan["width"]] if scan.get("height") and scan.get("width") else None,
+    }
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def _build_meta(src: Path, meta: dict | None) -> dict:
-    """Merge auto-derived shapes (4D-STEM folder) under explicit operator meta."""
+    """Auto-derive the calibration a raw file cannot carry, then layer operator ``meta`` on top.
+
+    A 4D-STEM folder yields det_shape/scan_shape from its Arina master; a Velox ``.emd`` yields
+    voltage/semiangle/magnification/FOV/scan_shape from its embedded metadata. Explicit operator
+    ``meta`` is applied last so it always wins over anything auto-derived."""
     out: dict = {}
     if src.is_dir():
         out.update(_derive_4dstem_shapes(src))
+    elif src.suffix.lower() == ".emd":
+        out.update(_derive_velox_meta(src))
     if meta:
         out.update({k: v for k, v in meta.items() if v is not None})
     return out
@@ -191,11 +220,38 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     return json.loads(Path(local).read_text())
 
 
+def find_dataset(files: list[str], name: str) -> tuple[str, str]:
+    """Resolve a flat dataset name to its repo path and kind (``"dir"`` or ``"file"``).
+
+    A dataset is either a folder under a bucket (``4dstem/gold_512/master.h5`` -> path
+    ``"4dstem/gold_512"``, a multi-file acquisition) or a single file (``haadf/gold.tif`` ->
+    that path). Resolving by flat name is what lets a user say ``"gold_512"`` without knowing
+    its bucket. Raises ``FileNotFoundError`` if nothing matches, ``ValueError`` if the name is
+    ambiguous across buckets - so download and delete can never silently hit the wrong one.
+    Pure (no network): the resolution rules are unit-tested against a plain list of paths."""
+    found: dict[str, str] = {}  # repo_path -> "dir" | "file"
+    for f in files:
+        parts = f.split("/")
+        if len(parts) >= 3 and parts[1] == name:
+            found[f"{parts[0]}/{name}"] = "dir"
+        elif len(parts) == 2 and Path(parts[1]).stem == name and not f.endswith(".json"):
+            found[f] = "file"  # a .json is a sidecar of the data file, not a rival dataset
+    if not found:
+        raise FileNotFoundError(
+            f"{name!r} not found. Call quantem.data.list_datasets() "
+            "(or `quantem-data list`) to see available names.")
+    if len(found) > 1:
+        raise ValueError(
+            f"{name!r} is ambiguous: {sorted(found)}. Rename one, or pass repo= "
+            "to a repo where it is unique.")
+    return next(iter(found.items()))
+
+
 def download(name: str, *, repo: str | None = None, out: str | Path | None = None,
              verbose: bool = True) -> Path:
     """Download one shared dataset by flat name and return its local path.
 
-    The collaborator names just the dataset (``"gold_512"``); this searches
+    The collaborator names just the dataset (``"gold_512"``); ``find_dataset`` searches
     every bucket to find where it lives, so they never need to know it is under
     ``4dstem/`` or ``haadf/``. Returns a directory for a multi-file acquisition
     (ready for ``discover_masters`` / ``load``) or the file path for a single-file
@@ -209,23 +265,7 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
     hf = _hf()
     repo_id = _resolve_repo(repo)
     files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
-    candidates: dict[str, str] = {}  # target_rel -> "dir" | "file"
-    for f in files:
-        parts = f.split("/")
-        if len(parts) >= 3 and parts[1] == name:
-            candidates[f"{parts[0]}/{name}"] = "dir"
-        elif len(parts) == 2 and Path(parts[1]).stem == name and not f.endswith(".json"):
-            candidates[f] = "file"  # .json is a sidecar of the data file, not a rival dataset
-    if not candidates:
-        raise FileNotFoundError(
-            f"{name!r} not found in {repo_id}. Call quantem.data.list_datasets() "
-            "(or `quantem-data list`) to see available names.")
-    if len(candidates) > 1:
-        raise ValueError(
-            f"{name!r} is ambiguous in {repo_id}: {sorted(candidates)}. "
-            "Rename one, or set --repo to a repo where it is unique."
-        )
-    target_rel, kind = next(iter(candidates.items()))
+    target_rel, kind = find_dataset(files, name)
     pattern = f"{target_rel}/*" if kind == "dir" else target_rel
     if verbose:
         print(f"Downloading '{name}' from Hugging Face ({repo_id}) over the internet - "
@@ -278,30 +318,19 @@ def delete(name: str, *, repo: str | None = None) -> list[str]:
     """
     hf = _hf()
     repo_id = _resolve_repo(repo)
-    dir_locs: set[str] = set()
-    file_groups: dict[str, list[str]] = {}
-    for f in hf.list_repo_files(repo_id=repo_id, repo_type="dataset"):
-        parts = f.split("/")
-        if len(parts) >= 3 and parts[1] == name:
-            dir_locs.add(f"{parts[0]}/{name}")
-        elif len(parts) == 2 and Path(parts[1]).stem == name:
-            file_groups.setdefault(parts[0], []).append(f)
-    locations = list(dir_locs) + [f"{b}/{name}" for b in file_groups]
-    if not locations:
-        raise FileNotFoundError(
-            f"{name!r} not found in {repo_id}. Call quantem.data.list_datasets() "
-            "(or `quantem-data list`) to see available names.")
-    if len(locations) > 1:
-        raise ValueError(f"{name!r} is ambiguous in {repo_id}: {sorted(locations)}. Delete one explicitly.")
+    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
+    target_rel, kind = find_dataset(files, name)
     deleted = []
-    if dir_locs:
-        loc = next(iter(dir_locs))
-        hf.delete_folder(path_in_repo=loc, repo_id=repo_id, repo_type="dataset")
-        deleted.append(f"{loc}/")
+    if kind == "dir":
+        hf.delete_folder(path_in_repo=target_rel, repo_id=repo_id, repo_type="dataset")
+        deleted.append(f"{target_rel}/")
     else:
-        for f in next(iter(file_groups.values())):  # data file + its .json sidecar
-            hf.delete_file(path_in_repo=f, repo_id=repo_id, repo_type="dataset")
-            deleted.append(f)
+        bucket = target_rel.split("/", 1)[0]
+        for f in files:  # the data file AND its .json calibration sidecar (same stem) go together
+            parts = f.split("/")
+            if len(parts) == 2 and parts[0] == bucket and Path(parts[1]).stem == name:
+                hf.delete_file(path_in_repo=f, repo_id=repo_id, repo_type="dataset")
+                deleted.append(f)
     return deleted
 
 
@@ -391,8 +420,8 @@ def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
     try:
         path = hf.hf_hub_download(repo_id=repo_id, repo_type="dataset",
                                    filename=f"{THUMB_DIR}/{full_name}.png")
-    except Exception:
-        return None
+    except (hf.errors.EntryNotFoundError, hf.errors.HfHubHTTPError):
+        return None  # no thumbnail uploaded for this dataset yet
     b64 = base64.b64encode(Path(path).read_bytes()).decode()
     return f"data:image/png;base64,{b64}"
 
