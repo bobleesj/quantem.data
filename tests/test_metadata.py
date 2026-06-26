@@ -22,6 +22,7 @@ VELOX_RAW = {
     "Scan": {"ScanSize": {"width": "512", "height": "512"}, "DwellTime": "1e-05"},
     "CustomProperties": {"StemMagnification": {"value": "1300000"}},  # times -> 1.3 MX
     "Instrument": {"Manufacturer": "FEI", "InstrumentModel": "Titan"},
+    "Acquisition": {"AcquisitionStartDatetime": {"DateTime": "1700000000"}},  # 2023-11-14 UTC
 }
 
 
@@ -43,6 +44,7 @@ def test_parse_velox_normalizes_units(velox_emd):
     assert parsed["full_scan_field_of_view_nm"] == pytest.approx(20.0)
     assert parsed["stem_magnification_x"] == pytest.approx(1_300_000.0)
     assert parsed["scan_size"] == {"width": 512, "height": 512}
+    assert parsed["acquisition_date"] == "2023-11-14"  # unix timestamp -> ISO date
 
 
 def test_upload_auto_meta_from_velox(velox_emd):
@@ -52,6 +54,7 @@ def test_upload_auto_meta_from_velox(velox_emd):
     assert meta["magnification_MX"] == pytest.approx(1.3)
     assert meta["scan_fov_nm"] == pytest.approx(20.0)
     assert meta["scan_shape"] == [512, 512]
+    assert meta["date"] == "2023-11-14"  # auto-dated from the acquisition timestamp
 
 
 def test_operator_meta_overrides_auto(velox_emd):

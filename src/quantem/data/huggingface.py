@@ -183,6 +183,7 @@ def _derive_velox_meta(path: Path) -> dict:
         "magnification_MX": mag / 1e6 if mag else None,  # Velox stores plain times -> Megatimes
         "scan_fov_nm": parsed.get("full_scan_field_of_view_nm"),
         "scan_shape": [scan["height"], scan["width"]] if scan.get("height") and scan.get("width") else None,
+        "date": parsed.get("acquisition_date"),
     }
     return {k: v for k, v in out.items() if v is not None}
 
