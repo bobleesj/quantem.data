@@ -35,6 +35,14 @@ def test_prompt_warns_but_keeps_going_when_required_is_skipped(monkeypatch, caps
     assert "warning" in capsys.readouterr().out
 
 
+def test_prompt_skips_fields_already_read_from_the_file(monkeypatch):
+    # voltage is auto-parsed from a Velox .emd, so the operator is asked only for the rest
+    _answers(monkeypatch, ["ncem", "gold", "2026-06-25", "", ""])  # source, sample, date, pixel, facility
+    meta = cli._prompt_meta("gold", "haadf", from_file={"voltage_kV": 300.0})
+    assert "voltage_kV" not in meta  # not asked; upload re-derives it from the file
+    assert meta["source"] == "ncem"
+
+
 def test_ask_reprompts_until_a_number_parses(monkeypatch):
     _answers(monkeypatch, ["not-a-number", "300"])
     assert cli._ask("voltage_kV", 300, float, required=True) == 300.0

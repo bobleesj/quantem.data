@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from quantem.data import download, list_datasets, read_meta, status, tree, upload
+from quantem.data.huggingface import auto_meta
 
 # The calibration a user is asked for at an interactive upload, per modality: (key, example,
 # cast, required). Auto-derived fields (modality, scan_shape/det_shape/shape, dtype) are never
@@ -134,8 +135,10 @@ def _upload(args: argparse.Namespace) -> int:
     elif args.no_input or not sys.stdin.isatty():
         meta = None  # scripted / piped: attach nothing, don't block on a prompt
     else:
-        meta = _prompt_meta(name, folder)
-        print(f"\nUploading '{name}' to {folder}/ with: {meta or '(no calibration)'}")
+        from_file = auto_meta(args.path)  # voltage/semiangle/... a Velox .emd already carries
+        meta = _prompt_meta(name, folder, from_file)
+        full = {**from_file, **meta}  # upload re-derives from_file; this is just the preview
+        print(f"\nUploading '{name}' to {folder}/ with: {full or '(no calibration)'}")
         if input("Proceed? [y/N]: ").strip().lower() not in ("y", "yes"):
             print("aborted.")
             return 1
@@ -152,14 +155,21 @@ def _template_meta(modality: str) -> dict:
     return {"modality": modality, **{key: example for key, example, _, _ in _PROMPT_FIELDS[modality]}}
 
 
-def _prompt_meta(name: str, folder: str) -> dict:
-    """Ask the operator for the calibration the raw file cannot carry, one field at a time
-    with an example and a required/optional tag; Enter skips a field (present = known). Missing
-    required fields are warned about, not blocked - the upload still proceeds."""
+def _prompt_meta(name: str, folder: str, from_file: dict | None = None) -> dict:
+    """Ask the operator only for the calibration the file does NOT already carry, one field at
+    a time with an example and a required/optional tag; Enter skips a field (present = known).
+    Fields in ``from_file`` (auto-parsed from a Velox .emd / Arina master) are shown, not asked
+    again - that is what makes most uploads just-confirm. Missing required fields are warned
+    about, not blocked."""
+    from_file = from_file or {}
     fields = _PROMPT_FIELDS.get(folder) or _PROMPT_FIELDS["haadf"]
     print(f"Describe '{name}' ({folder}). Press Enter to skip any field.")
-    meta = {key: _ask(key, example, cast, required) for key, example, cast, required in fields}
-    missing = [key for key, _, _, required in fields if required and meta.get(key) is None]
+    if from_file:
+        print(f"  read from the file (not asked): {from_file}")
+    meta = {key: _ask(key, example, cast, required)
+            for key, example, cast, required in fields if key not in from_file}
+    missing = [key for key, _, _, required in fields
+               if required and key not in from_file and meta.get(key) is None]
     if missing:
         print(f"  warning: missing recommended fields {missing} - uploading without them.")
     return {key: value for key, value in meta.items() if value is not None}

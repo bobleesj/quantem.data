@@ -163,6 +163,21 @@ def _derive_velox_meta(path: Path) -> dict:
     return {k: v for k, v in out.items() if v is not None}
 
 
+def auto_meta(path: str | Path) -> dict:
+    """The calibration ``upload`` reads straight from the file, so a user is never asked for it.
+
+    A Velox ``.emd`` yields voltage / semiangle / magnification / FOV / scan shape; an Arina
+    folder yields detector and scan shape. Empty if the file carries nothing extractable. The
+    interactive upload calls this first and only prompts for the fields it does NOT return.
+
+    Examples
+    --------
+    >>> auto_meta("scan.emd")
+    {'voltage_kV': 300.0, 'semiangle_mrad': 25.0, 'magnification_MX': 1.3, ...}
+    """
+    return _build_meta(Path(path), None)
+
+
 def _build_meta(src: Path, meta: dict | None) -> dict:
     """Auto-derive the calibration a raw file cannot carry, then layer operator ``meta`` on top.
 
