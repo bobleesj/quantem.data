@@ -3,6 +3,7 @@ Hugging Face client - no network. We are not testing huggingface_hub; we are tes
 OUR code calls it with the right repo paths: download builds the right allow-pattern, upload
 writes the data plus its sidecar, delete removes the data AND its .json, status aggregates
 sizes only over real datasets. monkeypatch swaps ``_hf()`` for the fake."""
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -116,6 +117,37 @@ def test_delete_file_dataset_removes_data_and_sidecar(monkeypatch):
     assert ("delete_file", "haadf/gold.tif") in hub.calls
     assert ("delete_file", "haadf/gold.json") in hub.calls
     assert set(removed) == {"haadf/gold.tif", "haadf/gold.json"}
+
+
+# --- load (download + dispatch to the widget loader) ----------------------------
+
+def _fake_widget(monkeypatch):
+    """Stand in for quantem.widget.io so load()'s dispatch is testable without the renderer
+    installed: read_image / load / discover_masters just echo their inputs so we can see
+    which path load() took."""
+    fake_io = SimpleNamespace(
+        read_image=lambda path: ("image", path),
+        load=lambda masters, **kw: ("4d", masters),
+        discover_masters=lambda folder: ["m1", "m2"],
+    )
+    monkeypatch.setitem(sys.modules, "quantem.widget", SimpleNamespace(io=fake_io))
+    monkeypatch.setitem(sys.modules, "quantem.widget.io", fake_io)
+
+
+def test_load_single_image_goes_through_read_image(monkeypatch, tmp_path):
+    img = tmp_path / "gold.tif"
+    img.write_bytes(b"x")
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None: img)
+    _fake_widget(monkeypatch)
+    assert hg.load("gold") == ("image", img)
+
+
+def test_load_acquisition_folder_goes_through_4d_loader(monkeypatch, tmp_path):
+    folder = tmp_path / "gold_512"
+    folder.mkdir()
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None: folder)
+    _fake_widget(monkeypatch)
+    assert hg.load("gold_512") == ("4d", ["m1", "m2"])  # dir -> load(discover_masters(...))
 
 
 # --- status ---------------------------------------------------------------------
