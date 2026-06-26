@@ -7,7 +7,7 @@ from quantem.data.sync import sync_dataset_metadata
 # every package-level verb means the same thing: `list_datasets` lists what's on Hugging
 # Face (matching status/download/read_meta). The LOCAL registry listing stays available as
 # `quantem.data.repository.list_datasets` for callers that want the synced-on-disk view.
-from quantem.data.hub import upload, download, read_meta, status, list_datasets, tree, browse, load
+from quantem.data._remote import upload, download, read_meta, status, list_datasets, tree, browse, load
 
 try:
     __version__ = version("quantem.data")

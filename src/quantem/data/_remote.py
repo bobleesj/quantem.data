@@ -37,7 +37,7 @@ def _resolve_repo(repo: str | None) -> str:
     return repo or os.environ.get("QUANTEM_DATA_REPO") or DEFAULT_REPO
 
 
-def _hub():
+def _hf():
     """Import huggingface_hub lazily with a clear install hint when missing."""
     # Our datasets are PUBLIC - no token needed. Silence huggingface_hub's
     # "HF_TOKEN secret does not exist" nudge (it fires on every download in Colab
@@ -45,7 +45,7 @@ def _hub():
     os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
     warnings.filterwarnings("ignore", message=r"(?s).*HF_TOKEN.*")
     # The "set a HF_TOKEN for higher rate limits" nudge on public downloads comes through
-    # the logging system, not warnings.warn, so the filter above misses it. Mute the hub
+    # the logging system, not warnings.warn, so the filter above misses it. Mute the huggingface_hub
     # logger to ERROR so a normal public download is quiet (real errors still surface).
     import logging  # noqa: PLC0415
     logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
@@ -79,7 +79,7 @@ def upload(path: str | Path, name: str | None = None, *,
     dataset; ``read_meta`` returns it on the other side (it also reads the older
     ``quantem_meta.json`` name so existing datasets keep working).
     """
-    hub = _hub()
+    hf = _hf()
     src = Path(path)
     repo_id = _resolve_repo(repo)
     if name is None:
@@ -87,20 +87,20 @@ def upload(path: str | Path, name: str | None = None, *,
     if folder is None:
         folder = "haadf" if src.is_file() else "4dstem"
     if src.is_dir():
-        info = hub.upload_folder(
+        info = hf.upload_folder(
             folder_path=str(src), path_in_repo=f"{folder}/{name}",
             repo_id=repo_id, repo_type="dataset",
         )
     else:
         suffix = "".join(src.suffixes)  # keep multi-part extensions like .nii.gz
-        info = hub.upload_file(
+        info = hf.upload_file(
             path_or_fileobj=str(src), path_in_repo=f"{folder}/{name}{suffix}",
             repo_id=repo_id, repo_type="dataset",
         )
     sidecar = _build_meta(src, meta)
     if sidecar:
-        _upload_meta(hub, repo_id, folder, name, sidecar, is_dir=src.is_dir())
-    return getattr(info, "commit_url", info)  # CommitInfo in modern hub, str in old
+        _upload_meta(hf, repo_id, folder, name, sidecar, is_dir=src.is_dir())
+    return getattr(info, "commit_url", info)  # CommitInfo in modern huggingface_hub, str in old
 
 
 def _derive_4dstem_shapes(folder: Path) -> dict:
@@ -142,7 +142,7 @@ def _build_meta(src: Path, meta: dict | None) -> dict:
     return out
 
 
-def _upload_meta(hub, repo_id: str, folder: str, name: str,
+def _upload_meta(hf, repo_id: str, folder: str, name: str,
                  sidecar: dict, *, is_dir: bool) -> None:
     """Write the calibration sidecar next to the dataset.
 
@@ -158,7 +158,7 @@ def _upload_meta(hub, repo_id: str, folder: str, name: str,
         json.dump(sidecar, fh, indent=2)
         tmp = fh.name
     try:
-        hub.upload_file(path_or_fileobj=tmp, path_in_repo=path_in_repo,
+        hf.upload_file(path_or_fileobj=tmp, path_in_repo=path_in_repo,
                         repo_id=repo_id, repo_type="dataset")
     finally:
         os.unlink(tmp)
@@ -172,10 +172,10 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     raw detector master cannot carry. Public repos need no token.
     """
     import json  # noqa: PLC0415
-    hub = _hub()
+    hf = _hf()
     repo_id = _resolve_repo(repo)
     target = None
-    for f in hub.list_repo_files(repo_id=repo_id, repo_type="dataset"):
+    for f in hf.list_repo_files(repo_id=repo_id, repo_type="dataset"):
         parts = f.split("/")
         # `quantem_meta.json` is the current sidecar name; `meta.json` is a legacy
         # name some early uploads used - accept both so older datasets stay readable.
@@ -187,7 +187,7 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
             break
     if target is None:
         return None
-    local = hub.hf_hub_download(repo_id=repo_id, repo_type="dataset", filename=target)
+    local = hf.hf_hub_download(repo_id=repo_id, repo_type="dataset", filename=target)
     return json.loads(Path(local).read_text())
 
 
@@ -206,9 +206,9 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
     so the user can tell the wait is the network, not our code. A second call on
     the same dataset is a local cache hit and prints "(already downloaded)".
     """
-    hub = _hub()
+    hf = _hf()
     repo_id = _resolve_repo(repo)
-    files = hub.list_repo_files(repo_id=repo_id, repo_type="dataset")
+    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
     candidates: dict[str, str] = {}  # target_rel -> "dir" | "file"
     for f in files:
         parts = f.split("/")
@@ -218,7 +218,7 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
             candidates[f] = "file"  # .json is a sidecar of the data file, not a rival dataset
     if not candidates:
         raise FileNotFoundError(
-            f"{name!r} not found in {repo_id}. Call quantem.data.hub.list_datasets() "
+            f"{name!r} not found in {repo_id}. Call quantem.data.list_datasets() "
             "(or `quantem-data list`) to see available names.")
     if len(candidates) > 1:
         raise ValueError(
@@ -231,7 +231,7 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
         print(f"Downloading '{name}' from Hugging Face ({repo_id}) over the internet - "
               "speed depends on your connection, not your computer ...", flush=True)
     t0 = time.perf_counter()
-    root = hub.snapshot_download(
+    root = hf.snapshot_download(
         repo_id=repo_id, repo_type="dataset",
         allow_patterns=pattern,
         local_dir=str(out) if out is not None else None,
@@ -254,10 +254,10 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
 
 def list_datasets(*, repo: str | None = None) -> list[str]:
     """List shared datasets as ``<bucket>/<name>`` (skips placeholders/docs)."""
-    hub = _hub()
+    hf = _hf()
     repo_id = _resolve_repo(repo)
     names = set()
-    for f in hub.list_repo_files(repo_id=repo_id, repo_type="dataset"):
+    for f in hf.list_repo_files(repo_id=repo_id, repo_type="dataset"):
         parts = f.split("/")
         if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
             continue
@@ -276,11 +276,11 @@ def delete(name: str, *, repo: str | None = None) -> list[str]:
     matches more than one dataset so a delete never nukes the wrong bucket. The
     CLI adds a re-type-to-confirm prompt; this function deletes immediately.
     """
-    hub = _hub()
+    hf = _hf()
     repo_id = _resolve_repo(repo)
     dir_locs: set[str] = set()
     file_groups: dict[str, list[str]] = {}
-    for f in hub.list_repo_files(repo_id=repo_id, repo_type="dataset"):
+    for f in hf.list_repo_files(repo_id=repo_id, repo_type="dataset"):
         parts = f.split("/")
         if len(parts) >= 3 and parts[1] == name:
             dir_locs.add(f"{parts[0]}/{name}")
@@ -289,18 +289,18 @@ def delete(name: str, *, repo: str | None = None) -> list[str]:
     locations = list(dir_locs) + [f"{b}/{name}" for b in file_groups]
     if not locations:
         raise FileNotFoundError(
-            f"{name!r} not found in {repo_id}. Call quantem.data.hub.list_datasets() "
+            f"{name!r} not found in {repo_id}. Call quantem.data.list_datasets() "
             "(or `quantem-data list`) to see available names.")
     if len(locations) > 1:
         raise ValueError(f"{name!r} is ambiguous in {repo_id}: {sorted(locations)}. Delete one explicitly.")
     deleted = []
     if dir_locs:
         loc = next(iter(dir_locs))
-        hub.delete_folder(path_in_repo=loc, repo_id=repo_id, repo_type="dataset")
+        hf.delete_folder(path_in_repo=loc, repo_id=repo_id, repo_type="dataset")
         deleted.append(f"{loc}/")
     else:
         for f in next(iter(file_groups.values())):  # data file + its .json sidecar
-            hub.delete_file(path_in_repo=f, repo_id=repo_id, repo_type="dataset")
+            hf.delete_file(path_in_repo=f, repo_id=repo_id, repo_type="dataset")
             deleted.append(f)
     return deleted
 
@@ -312,15 +312,15 @@ def status(*, repo: str | None = None) -> dict:
     what do I already have locally" in one call. No token needed for the dataset
     listing; auth is reported as whoever is logged in (or ``None`` = download-only).
     """
-    hub = _hub()
+    hf = _hf()
     repo_id = _resolve_repo(repo)
-    api = hub.HfApi()
-    token = hub.get_token()
+    api = hf.HfApi()
+    token = hf.get_token()
     user = None
     if token:
         try:
             user = api.whoami(token=token).get("name")
-        except hub.errors.HfHubHTTPError:
+        except hf.errors.HfHubHTTPError:
             user = None  # stale/invalid token -> treat as download-only
     sizes: dict[str, int] = {}
     counts: dict[str, int] = {}
@@ -340,7 +340,7 @@ def status(*, repo: str | None = None) -> dict:
         sizes[key] = sizes.get(key, 0) + size
         counts[key] = counts.get(key, 0) + 1
     datasets = [{"name": k, "files": counts[k], "size_mb": sizes[k] / 1e6} for k in sorted(sizes)]
-    cache_dir = Path(hub.constants.HF_HUB_CACHE) / f"datasets--{repo_id.replace('/', '--')}"
+    cache_dir = Path(hf.constants.HF_HUB_CACHE) / f"datasets--{repo_id.replace('/', '--')}"
     cached_mb = 0.0
     if cache_dir.exists():
         cached_mb = sum(f.stat().st_size for f in cache_dir.rglob("*") if f.is_file()) / 1e6
@@ -387,9 +387,9 @@ def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
     """Fetch only ``.thumbnails/<bucket>/<name>.png`` (KB, not the data) and return it as a
     base64 data URI for inline display, or None if the dataset has no thumbnail yet."""
     import base64  # noqa: PLC0415
-    hub = _hub()
+    hf = _hf()
     try:
-        path = hub.hf_hub_download(repo_id=repo_id, repo_type="dataset",
+        path = hf.hf_hub_download(repo_id=repo_id, repo_type="dataset",
                                    filename=f"{THUMB_DIR}/{full_name}.png")
     except Exception:
         return None

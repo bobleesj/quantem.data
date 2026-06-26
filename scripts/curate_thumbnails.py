@@ -15,12 +15,12 @@ import tempfile
 import numpy as np
 from PIL import Image
 
-from quantem.data import hub
+from quantem.data import _remote
 from quantem.widget import io as wio
 
 THUMB = 256
-hf = hub._hub()
-repo = hub.DEFAULT_REPO
+hf = _remote._hf()
+repo = _remote.DEFAULT_REPO
 TOKEN = hf.get_token()
 if not TOKEN:
     raise SystemExit("No HF token found. Run `huggingface-cli login` with a WRITE token first.")
@@ -67,7 +67,7 @@ def thumb_png(local: str, is_npy: bool) -> bytes:
 
 
 def main() -> int:
-    datasets = hub.list_datasets()
+    datasets = _remote.list_datasets()
     print(f"{len(datasets)} datasets\n")
     done, skipped = [], []
     for full in datasets:
@@ -82,7 +82,7 @@ def main() -> int:
             tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
             with open(tmp, "wb") as fh:
                 fh.write(png)
-            hf.upload_file(path_or_fileobj=tmp, path_in_repo=f"{hub.THUMB_DIR}/{full}.png",
+            hf.upload_file(path_or_fileobj=tmp, path_in_repo=f"{_remote.THUMB_DIR}/{full}.png",
                            repo_id=repo, repo_type="dataset", token=TOKEN)
             os.unlink(tmp)
             # remove the old in-folder thumbnail that caused the download collision

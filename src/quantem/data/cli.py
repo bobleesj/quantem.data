@@ -9,14 +9,14 @@ Hugging Face repo without writing any ``huggingface_hub`` code.
 
 `list` / `status` / `meta` / `download` are read-only and need no token (the repo is
 public). `upload` writes, so it needs an HF token (``huggingface-cli login`` or ``HF_TOKEN``).
-Every command is a thin wrapper over ``quantem.data.hub`` so the CLI and the Python API
-never drift."""
+Every command is a thin wrapper over the ``quantem.data`` verbs so the CLI and the Python
+API never drift."""
 import argparse
 import json
 import sys
 from pathlib import Path
 
-from quantem.data import hub
+from quantem.data import download, list_datasets, read_meta, status, tree, upload
 
 
 # ---------------------------------------------------------------------------
@@ -60,31 +60,31 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> int:
-    """Route a parsed command to the matching ``quantem.data.hub`` verb."""
+    """Route a parsed command to the matching ``quantem.data`` verb."""
     if args.command == "list":
-        names = hub.list_datasets(repo=args.repo)
+        names = list_datasets(repo=args.repo)
         print("\n".join(names) if names else "(no datasets)")
         return 0
     if args.command == "tree":
-        hub.tree(repo=args.repo)
+        tree(repo=args.repo)
         return 0
     if args.command == "status":
-        s = hub.status(repo=args.repo)
+        s = status(repo=args.repo)
         print(f"repo {s['repo']}  |  logged in as {s['logged_in_as']}  |  {s['total_mb']:.0f} MB total")
         for d in s["datasets"]:
             print(f"  {d['size_mb']:>10.1f} MB  {d['files']:>3} files  {d['name']}")
         return 0
     if args.command == "meta":
-        meta = hub.read_meta(args.name, repo=args.repo)
+        meta = read_meta(args.name, repo=args.repo)
         print(json.dumps(meta, indent=2) if meta else f"{args.name!r}: no metadata")
         return 0
     if args.command == "download":
-        path = hub.download(args.name, repo=args.repo, out=args.out)
+        path = download(args.name, repo=args.repo, out=args.out)
         print(path)
         return 0
     if args.command == "upload":
         meta = json.loads(Path(args.meta).read_text()) if args.meta else None
-        url = hub.upload(args.path, args.name, folder=args.folder, repo=args.repo, meta=meta)
+        url = upload(args.path, args.name, folder=args.folder, repo=args.repo, meta=meta)
         print(url)
         return 0
     return 0
