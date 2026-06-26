@@ -4,6 +4,7 @@ OUR code calls it with the right repo paths: download builds the right allow-pat
 writes the data plus its sidecar, delete removes the data AND its .json, status aggregates
 sizes only over real datasets. monkeypatch swaps ``_hf()`` for the fake."""
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,8 +33,8 @@ class _FakeHub:
         self._files = list(files)
         self._tree = list(tree)
         self.calls = []
-        self.constants = type("C", (), {"HF_HUB_CACHE": cache})
-        self.errors = type("E", (), {"HfHubHTTPError": Exception, "EntryNotFoundError": Exception})
+        self.constants = SimpleNamespace(HF_HUB_CACHE=cache)
+        self.errors = SimpleNamespace(HfHubHTTPError=Exception, EntryNotFoundError=Exception)
 
     def list_repo_files(self, repo_id, repo_type="dataset"):
         return self._files

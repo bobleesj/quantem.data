@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import time
 import warnings
+from collections import Counter
 from pathlib import Path
 from typing import Literal
 
@@ -79,6 +80,11 @@ def upload(path: str | Path, name: str | None = None, *,
     from the master) and written as a ``meta.json`` sidecar travelling with the
     dataset; ``read_meta`` returns it on the other side (it also reads the older
     ``quantem_meta.json`` name so existing datasets keep working).
+
+    Examples
+    --------
+    >>> upload("scan.emd", name="gold_run", folder="haadf", meta={"voltage_kV": 300})
+    'https://huggingface.co/datasets/bobleesj/quantem-data/commit/...'
     """
     hf = _hf()
     src = Path(path)
@@ -200,6 +206,11 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     The counterpart to ``upload(..., meta=...)``: a collaborator who downloads a
     4D-STEM acquisition gets back the scan sampling / FOV / voltage / semiangle the
     raw detector master cannot carry. Public repos need no token.
+
+    Examples
+    --------
+    >>> read_meta("gold_512")
+    {'voltage_kV': 300, 'semiangle_mrad': 25.0, 'scan_shape': [512, 512]}
     """
     import json  # noqa: PLC0415
     hf = _hf()
@@ -280,6 +291,12 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
     with a clear "downloading from the internet" header and a size/speed summary,
     so the user can tell the wait is the network, not our code. A second call on
     the same dataset is a local cache hit and prints "(already downloaded)".
+
+    Examples
+    --------
+    >>> path = download("gold_drift_0deg")
+    >>> path.is_file()
+    True
     """
     hf = _hf()
     repo_id = _resolve_repo(repo)
@@ -312,7 +329,13 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
 
 
 def list_datasets(*, repo: str | None = None) -> list[str]:
-    """List shared datasets as ``<bucket>/<name>`` (skips placeholders/docs)."""
+    """List shared datasets as ``<bucket>/<name>`` (skips placeholders/docs).
+
+    Examples
+    --------
+    >>> list_datasets()
+    ['4dstem/gold_512', 'haadf/gold_drift_0deg']
+    """
     hf = _hf()
     repo_id = _resolve_repo(repo)
     files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
@@ -351,6 +374,12 @@ def status(*, repo: str | None = None) -> dict:
     Answers the operator's "where does my data live, can I upload, what is shared,
     what do I already have locally" in one call. No token needed for the dataset
     listing; auth is reported as whoever is logged in (or ``None`` = download-only).
+
+    Examples
+    --------
+    >>> snap = status()
+    >>> snap["logged_in_as"], len(snap["datasets"])
+    ('bobleesj', 8)
     """
     hf = _hf()
     repo_id = _resolve_repo(repo)
@@ -362,8 +391,8 @@ def status(*, repo: str | None = None) -> dict:
             user = api.whoami(token=token).get("name")
         except hf.errors.HfHubHTTPError:
             user = None  # stale/invalid token -> treat as download-only
-    sizes: dict[str, int] = {}
-    counts: dict[str, int] = {}
+    sizes: Counter[str] = Counter()
+    counts: Counter[str] = Counter()
     for entry in api.list_repo_tree(repo_id, repo_type="dataset", recursive=True):
         size = getattr(entry, "size", None)
         if size is None:
@@ -372,8 +401,8 @@ def status(*, repo: str | None = None) -> dict:
         if classified is None:
             continue  # not a dataset file (wrong bucket, placeholder, or a top-level sidecar)
         key = classified[0]
-        sizes[key] = sizes.get(key, 0) + size
-        counts[key] = counts.get(key, 0) + 1
+        sizes[key] += size
+        counts[key] += 1
     datasets = [{"name": k, "files": counts[k], "size_mb": sizes[k] / 1e6} for k in sorted(sizes)]
     cache_dir = Path(hf.constants.HF_HUB_CACHE) / f"datasets--{repo_id.replace('/', '--')}"
     cached_mb = 0.0
@@ -402,7 +431,14 @@ def _by_bucket(repo: str | None = None) -> tuple[dict, dict]:
 
 def tree(*, repo: str | None = None) -> None:
     """Print the shared repo grouped by bucket (data type) with sizes: the folder structure
-    at a glance, so a user can pick a dataset without opening Hugging Face in a browser."""
+    at a glance, so a user can pick a dataset without opening Hugging Face in a browser.
+
+    Examples
+    --------
+    >>> tree()
+    bobleesj/quantem-data  (12.3 GB total, 8 datasets)
+    ...
+    """
     groups, snap = _by_bucket(repo=repo)
     print(f"{snap['repo']}  ({snap['total_mb'] / 1000:.1f} GB total, {len(snap['datasets'])} datasets)")
     for bucket in sorted(groups):
@@ -475,7 +511,12 @@ def browse(*, repo: str | None = None) -> "_Gallery":
     """Visual dataset picker: a grid of thumbnails + names + sizes you can scan before
     downloading anything. In Jupyter it renders inline; in a terminal it prints the tree.
     Thumbnails are tiny (KB) and fetched on the fly - the multi-GB data is never touched.
-    Pick a name and pass it to ``download(...)``."""
+    Pick a name and pass it to ``download(...)``.
+
+    Examples
+    --------
+    >>> browse()   # in Jupyter: a thumbnail grid; in a terminal: the tree
+    """
     return _Gallery(repo)
 
 
@@ -487,7 +528,14 @@ def load(name: str, *, repo: str | None = None, out: str | Path | None = None, *
     Arina masters) returns the loaded 4D data; a single image returns a ``Dataset2d``.
     Loading lives in ``quantem.widget`` (the renderer), imported lazily so ``quantem.data``
     stays a standalone, widget-free transfer layer; extra kwargs pass through to the 4D
-    loader (e.g. ``det_bin=``)."""
+    loader (e.g. ``det_bin=``).
+
+    Examples
+    --------
+    >>> ds = load("gold_drift_0deg")
+    >>> ds.array.shape
+    (2048, 2048)
+    """
     path = download(name, repo=repo, out=out)
     try:
         from quantem.widget import io as _io  # noqa: PLC0415
