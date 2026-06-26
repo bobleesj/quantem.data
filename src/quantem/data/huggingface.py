@@ -40,24 +40,25 @@ def _resolve_repo(repo: str | None) -> str:
 
 
 def _hf():
-    """Import huggingface_hub lazily with a clear install hint when missing."""
-    # Our datasets are PUBLIC - no token needed. Silence huggingface_hub's
-    # "HF_TOKEN secret does not exist" nudge (it fires on every download in Colab
-    # and confuses users into thinking auth is required).
+    """Import huggingface_hub lazily, with a clear install hint when it is missing.
+
+    Our datasets are PUBLIC, so no token is ever needed. huggingface_hub still nudges
+    anonymous users ("set a HF_TOKEN for higher rate limits", "HF_TOKEN secret does not
+    exist") on every request - noise that wrongly implies auth is required. We mute it: the
+    env var stops the implicit-token lookup, and the library's own logging is set to
+    errors-only AFTER import (doing it before does nothing, the import reconfigures the
+    logger). Real errors still surface."""
     os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
     warnings.filterwarnings("ignore", message=r"(?s).*HF_TOKEN.*")
-    # The "set a HF_TOKEN for higher rate limits" nudge on public downloads comes through
-    # the logging system, not warnings.warn, so the filter above misses it. Mute the huggingface_hub
-    # logger to ERROR so a normal public download is quiet (real errors still surface).
-    import logging  # noqa: PLC0415
-    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
     try:
         import huggingface_hub  # noqa: PLC0415
+        from huggingface_hub.utils import logging as hf_logging  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(
             "huggingface_hub is required to share datasets. "
             "Install it with `pip install huggingface_hub`."
         ) from exc
+    hf_logging.set_verbosity_error()
     return huggingface_hub
 
 
