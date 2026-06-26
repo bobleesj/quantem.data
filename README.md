@@ -36,6 +36,17 @@ quantem-data download gold_512 --out ./d   # pull one dataset
 
 ## Publish (owner)
 
+From the terminal, just point at the data - `upload` asks for the calibration (with an
+example for each field) and shows you the result before writing:
+
+```bash
+quantem-data upload ./gold_512        # prompts for voltage, semiangle, sample, date, ...
+quantem-data upload scan.emd --meta cal.json   # or script it with a JSON sidecar
+quantem-data upload scan.emd --no-input        # or attach nothing
+```
+
+Or from Python:
+
 ```python
 from quantem.data import upload
 
