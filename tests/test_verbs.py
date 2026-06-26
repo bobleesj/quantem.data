@@ -90,7 +90,7 @@ def test_upload_file_with_meta_writes_data_and_sidecar(monkeypatch, tmp_path):
     src = tmp_path / "gold.tif"
     src.write_bytes(b"x")
     url = hg.upload(str(src), name="gold", folder="haadf", meta={"voltage_kV": 300})
-    assert _uploaded(hub) == ["haadf/gold.tif", "haadf/gold.json"]  # data, then its sidecar
+    assert _uploaded(hub) == ["haadf/gold.tif", "haadf/gold.yaml"]  # data, then its YAML sidecar
     assert url == "https://hf/commit"
 
 

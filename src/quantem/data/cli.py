@@ -5,22 +5,21 @@ Hugging Face repo without writing any ``huggingface_hub`` code.
     quantem-data status                        # repo summary (datasets, file counts, sizes)
     quantem-data meta gold_512                 # print a dataset's calibration sidecar
     quantem-data download gold_512 --out ./d   # pull one dataset by flat name
-    quantem-data template 4dstem > cal.json    # an example sidecar to fill in, not start blank
+    quantem-data template 4dstem > cal.yaml    # an example sidecar to fill in, not start blank
     quantem-data upload ./gold_512             # asks for calibration, then uploads
 
 `list` / `status` / `meta` / `download` are read-only and need no token (the repo is
 public). `upload` writes, so it needs an HF token (``huggingface-cli login`` or ``HF_TOKEN``).
 Run interactively, `upload` asks for the calibration the raw file cannot store (with an
-example for each field) so the user never has to hand-write a JSON sidecar; pass ``--meta
-cal.json`` to script it, or ``--no-input`` to skip the prompts entirely. Every command is a
-thin wrapper over the ``quantem.data`` verbs so the CLI and the Python API never drift."""
+example for each field) so the user never has to hand-write a sidecar; pass ``--meta cal.yaml``
+to script it, or ``--no-input`` to skip the prompts entirely. Metadata is human-readable YAML.
+Every command is a thin wrapper over the ``quantem.data`` verbs so the CLI and API never drift."""
 import argparse
-import json
 import sys
 from pathlib import Path
 
 from quantem.data import download, list_datasets, read_meta, status, tree, upload
-from quantem.data.huggingface import auto_meta
+from quantem.data.huggingface import auto_meta, parse_sidecar
 
 # The calibration a user is asked for at an interactive upload, per modality: (key, example,
 # cast, required). Auto-derived fields (modality, scan_shape/det_shape/shape, dtype) are never
@@ -79,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     p_up.add_argument("path", help="Local file or folder to upload.")
     p_up.add_argument("--name", default=None, help="Dataset name (default: the file/folder stem).")
     p_up.add_argument("--folder", default=None, help="Bucket: 4dstem or haadf (default: auto by content).")
-    p_up.add_argument("--meta", default=None, help="Path to a JSON calibration sidecar (skips the prompts).")
+    p_up.add_argument("--meta", default=None, help="Path to a YAML or JSON calibration sidecar (skips the prompts).")
     p_up.add_argument("--no-input", action="store_true", help="Don't prompt for calibration (scripts/CI).")
 
     args = parser.parse_args(argv)
@@ -110,10 +109,15 @@ def _dispatch(args: argparse.Namespace) -> int:
         return 0
     if args.command == "meta":
         meta = read_meta(args.name, repo=args.repo)
-        print(json.dumps(meta, indent=2) if meta else f"{args.name!r}: no metadata")
+        if not meta:
+            print(f"{args.name!r}: no metadata")
+        else:
+            import yaml  # noqa: PLC0415
+            print(yaml.safe_dump(meta, sort_keys=False).rstrip())
         return 0
     if args.command == "template":
-        print(json.dumps(_template_meta(args.modality), indent=2))
+        import yaml  # noqa: PLC0415
+        print(yaml.safe_dump(_template_meta(args.modality), sort_keys=False).rstrip())
         return 0
     if args.command == "download":
         path = download(args.name, repo=args.repo, out=args.out)
@@ -131,7 +135,7 @@ def _upload(args: argparse.Namespace) -> int:
     name = args.name or (src.stem if src.is_file() else src.name)
     folder = args.folder or ("4dstem" if src.is_dir() else "haadf")
     if args.meta:
-        meta = json.loads(Path(args.meta).read_text())
+        meta = parse_sidecar(args.meta)  # .yaml or .json, by extension
     elif args.no_input or not sys.stdin.isatty():
         meta = None  # scripted / piped: attach nothing, don't block on a prompt
     else:

@@ -33,6 +33,30 @@ DEFAULT_REPO = "bobleesj/quantem-data"
 # / tree / browse as if they were downloadable acquisitions.
 DATA_BUCKETS = ("4dstem", "haadf")
 
+# A dataset's calibration travels as a YAML sidecar (humans browsing the repo read clean YAML,
+# not JSON braces). Older datasets used JSON, so read_meta still accepts it; YAML is preferred
+# when both exist. These suffixes/names are NOT datasets themselves - they ride along a dataset.
+SIDECAR_SUFFIXES = (".yaml", ".yml", ".json")
+SIDECAR_BASENAMES = ("meta.yaml", "meta.yml", "quantem_meta.json", "meta.json")  # in-folder, preferred first
+
+
+def _dump_sidecar(sidecar: dict) -> str:
+    """Serialize a calibration dict to YAML text, keys in insertion order (modality first)."""
+    import yaml  # noqa: PLC0415
+    return yaml.safe_dump(sidecar, sort_keys=False)
+
+
+def parse_sidecar(path: str | Path) -> dict:
+    """Read a calibration sidecar by extension: YAML for ``.yaml``/``.yml``, else JSON. Used for
+    both downloaded sidecars and a local ``--meta`` file, so the two never parse differently."""
+    path = Path(path)
+    text = path.read_text()
+    if path.suffix.lower() in (".yaml", ".yml"):
+        import yaml  # noqa: PLC0415
+        return yaml.safe_load(text)
+    import json  # noqa: PLC0415
+    return json.loads(text)
+
 
 def _resolve_repo(repo: str | None) -> str:
     """Pick the dataset repo: explicit arg, else env, else the project default."""
@@ -78,9 +102,9 @@ def upload(path: str | Path, name: str | None = None, *,
     (scan sampling, FOV, voltage, semiangle): the detector h5 only knows detector
     pixels, so a collaborator who downloads the data would otherwise have no FOV.
     When given, it is merged with auto-derived ``det_shape``/``scan_shape`` (read
-    from the master) and written as a ``meta.json`` sidecar travelling with the
+    from the master) and written as a ``meta.yaml`` sidecar travelling with the
     dataset; ``read_meta`` returns it on the other side (it also reads the older
-    ``quantem_meta.json`` name so existing datasets keep working).
+    ``meta.json``/``quantem_meta.json`` names so existing datasets keep working).
 
     Examples
     --------
@@ -196,18 +220,17 @@ def _build_meta(src: Path, meta: dict | None) -> dict:
 
 def _upload_meta(hf, repo_id: str, folder: str, name: str,
                  sidecar: dict, *, is_dir: bool) -> None:
-    """Write the calibration sidecar next to the dataset.
+    """Write the calibration sidecar (YAML) next to the dataset.
 
-    Folder dataset -> ``<bucket>/<name>/meta.json`` inside the folder (download
+    Folder dataset -> ``<bucket>/<name>/meta.yaml`` inside the folder (download
     returns the dir, so it rides along). File dataset -> a sibling
-    ``<bucket>/<name>.json`` (the same stem ``delete`` already removes).
+    ``<bucket>/<name>.yaml`` (the same stem ``delete`` already removes).
     """
-    import json  # noqa: PLC0415
-    import tempfile
-    path_in_repo = (f"{folder}/{name}/meta.json" if is_dir
-                    else f"{folder}/{name}.json")
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
-        json.dump(sidecar, fh, indent=2)
+    import tempfile  # noqa: PLC0415
+    path_in_repo = (f"{folder}/{name}/meta.yaml" if is_dir
+                    else f"{folder}/{name}.yaml")
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+        fh.write(_dump_sidecar(sidecar))
         tmp = fh.name
     try:
         hf.upload_file(path_or_fileobj=tmp, path_in_repo=path_in_repo,
@@ -228,24 +251,30 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     >>> read_meta("gold_512")
     {'voltage_kV': 300, 'semiangle_mrad': 25.0, 'scan_shape': [512, 512]}
     """
-    import json  # noqa: PLC0415
     hf = _hf()
     repo_id = _resolve_repo(repo)
-    target = None
-    for f in hf.list_repo_files(repo_id=repo_id, repo_type="dataset"):
-        parts = f.split("/")
-        # `quantem_meta.json` is the current sidecar name; `meta.json` is a legacy
-        # name some early uploads used - accept both so older datasets stay readable.
-        if len(parts) == 3 and parts[1] == name and parts[2] in ("quantem_meta.json", "meta.json"):
-            target = f
-            break
-        if len(parts) == 2 and f.endswith(".json") and Path(parts[1]).stem == name:
-            target = f
-            break
+    target = _find_sidecar(hf.list_repo_files(repo_id=repo_id, repo_type="dataset"), name)
     if target is None:
         return None
     local = hf.hf_hub_download(repo_id=repo_id, repo_type="dataset", filename=target)
-    return json.loads(Path(local).read_text())
+    return parse_sidecar(local)
+
+
+def _find_sidecar(files: list[str], name: str) -> str | None:
+    """The repo path of a dataset's calibration sidecar, preferring YAML over legacy JSON.
+
+    A folder dataset keeps it inside (``<name>/meta.yaml``); a single file keeps it as a sibling
+    (``<name>.yaml``). Both YAML and the older JSON names are accepted so existing datasets stay
+    readable; if a dataset somehow has both, YAML wins."""
+    rank = {".yaml": 0, ".yml": 1, ".json": 2}
+    found = []
+    for f in files:
+        parts = f.split("/")
+        if len(parts) == 3 and parts[1] == name and parts[2] in SIDECAR_BASENAMES:
+            found.append(f)
+        elif len(parts) == 2 and Path(parts[1]).stem == name and Path(parts[1]).suffix.lower() in SIDECAR_SUFFIXES:
+            found.append(f)
+    return min(found, key=lambda f: rank.get(Path(f).suffix.lower(), 9)) if found else None
 
 
 def dataset_entry(parts: list[str]) -> tuple[str, str, Literal["dir", "file"]] | None:
@@ -265,7 +294,7 @@ def dataset_entry(parts: list[str]) -> tuple[str, str, Literal["dir", "file"]] |
     if len(parts) >= 3:  # any file under <bucket>/<name>/ marks that folder a dataset
         key = f"{parts[0]}/{parts[1]}"
         return key, key, "dir"
-    if not parts[1].endswith(".json"):  # a lone data file; its .json sidecar is not its own dataset
+    if Path(parts[1]).suffix.lower() not in SIDECAR_SUFFIXES:  # a lone data file; its sidecar is not its own dataset
         return f"{parts[0]}/{Path(parts[1]).stem}", f"{parts[0]}/{parts[1]}", "file"
     return None
 

@@ -47,26 +47,27 @@ quantem-data upload scan.emd --no-input        # or attach nothing
 
 ### Metadata template
 
-Don't start from a blank file - `template` prints a filled example you edit, then pass to
-`--meta`:
+Metadata is human-readable YAML. Don't start from a blank file - `template` prints a filled
+example you edit, then pass to `--meta`:
 
 ```bash
-quantem-data template 4dstem > cal.json   # or: template haadf
+quantem-data template 4dstem > cal.yaml   # or: template haadf
 ```
 
-```json
-{
-  "modality": "4dstem",
-  "voltage_kV": 300,
-  "semiangle_mrad": 25,
-  "source": "ncem",
-  "sample": "gold nanoparticles",
-  "date": "2026-06-25",
-  "scan_sampling_A": 0.2,
-  "magnification_MX": 1.3,
-  "facility": "ncem"
-}
+```yaml
+modality: 4dstem
+voltage_kV: 300
+semiangle_mrad: 25
+source: ncem
+sample: gold nanoparticles
+date: '2026-06-25'
+scan_sampling_A: 0.2
+magnification_MX: 1.3
+facility: ncem
 ```
+
+Most of this is filled automatically when the file already carries it (a Velox `.emd`), so an
+interactive `upload` only asks for what's missing. `--meta` accepts YAML or JSON.
 
 Or from Python:
 
