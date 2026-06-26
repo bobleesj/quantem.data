@@ -442,3 +442,25 @@ def browse(*, repo: str | None = None) -> "_Gallery":
     Thumbnails are tiny (KB) and fetched on the fly - the multi-GB data is never touched.
     Pick a name and pass it to ``download(...)``."""
     return _Gallery(repo)
+
+
+def load(name: str, *, repo: str | None = None, out: str | Path | None = None, **kwargs):
+    """Download a dataset AND return it ready to use, in one call.
+
+    The intuitive primitive: ``ds = load("gold_haadf")`` instead of download-a-path then
+    hand it to a separate loader. Dispatches by shape - a 4D-STEM acquisition (a folder of
+    Arina masters) returns the loaded 4D data; a single image returns a ``Dataset2d``.
+    Loading lives in ``quantem.widget`` (the renderer), imported lazily so ``quantem.data``
+    stays a standalone, widget-free transfer layer; extra kwargs pass through to the 4D
+    loader (e.g. ``det_bin=``)."""
+    path = download(name, repo=repo, out=out)
+    try:
+        from quantem.widget import io as _io  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError(
+            "load() needs the quantem.widget loader: pip install quantem.widget "
+            "(download() alone returns the file path without it)."
+        ) from exc
+    if Path(path).is_dir():
+        return _io.load(_io.discover_masters(path), **kwargs)  # 4D-STEM acquisition
+    return _io.read_image(path)  # single image -> Dataset2d
