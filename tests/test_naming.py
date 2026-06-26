@@ -31,3 +31,14 @@ def test_same_name_in_two_buckets_is_ambiguous():
     files = ["4dstem/gold/gold_master.h5", "haadf/gold.tif"]
     with pytest.raises(ValueError):
         find_dataset(files, "gold")
+
+
+def test_non_data_bucket_is_not_a_dataset():
+    # `notebooks/` holds Colab demos, not datasets - it must never resolve as one
+    with pytest.raises(FileNotFoundError):
+        find_dataset(["notebooks/demo/show.ipynb"], "demo")
+
+
+def test_placeholder_is_skipped():
+    with pytest.raises(FileNotFoundError):
+        find_dataset(["4dstem/placeholder_gold/keep.txt"], "placeholder_gold")

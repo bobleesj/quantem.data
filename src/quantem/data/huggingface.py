@@ -23,6 +23,7 @@ import os
 import time
 import warnings
 from pathlib import Path
+from typing import Literal
 
 DEFAULT_REPO = "bobleesj/quantem-data"
 
@@ -220,22 +221,40 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     return json.loads(Path(local).read_text())
 
 
-def find_dataset(files: list[str], name: str) -> tuple[str, str]:
-    """Resolve a flat dataset name to its repo path and kind (``"dir"`` or ``"file"``).
+def dataset_entry(parts: list[str]) -> tuple[str, str, Literal["dir", "file"]] | None:
+    """``(display_key, repo_path, kind)`` for a repo path that is a dataset, else ``None``.
 
-    A dataset is either a folder under a bucket (``4dstem/gold_512/master.h5`` -> path
-    ``"4dstem/gold_512"``, a multi-file acquisition) or a single file (``haadf/gold.tif`` ->
-    that path). Resolving by flat name is what lets a user say ``"gold_512"`` without knowing
-    its bucket. Raises ``FileNotFoundError`` if nothing matches, ``ValueError`` if the name is
-    ambiguous across buckets - so download and delete can never silently hit the wrong one.
-    Pure (no network): the resolution rules are unit-tested against a plain list of paths."""
-    found: dict[str, str] = {}  # repo_path -> "dir" | "file"
+    The single source of truth for "what counts as a shared dataset" - ``list_datasets``,
+    ``status`` and ``find_dataset`` all defer to it, so they can never disagree about which
+    paths are datasets or what their names are. A path qualifies only if it sits in a data
+    bucket and is not a placeholder, and is then either a folder (a multi-file acquisition) or
+    a lone data file (a ``.json`` sidecar never counts on its own).
+
+    ``display_key`` is ``<bucket>/<flat-name>`` (what users see; a single file's extension is
+    stripped). ``repo_path`` is the actual thing download/delete act on - the folder, or the
+    data file WITH its extension. ``kind`` is ``"dir"`` or ``"file"``."""
+    if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
+        return None
+    if len(parts) >= 3:  # any file under <bucket>/<name>/ marks that folder a dataset
+        key = f"{parts[0]}/{parts[1]}"
+        return key, key, "dir"
+    if not parts[1].endswith(".json"):  # a lone data file; its .json sidecar is not its own dataset
+        return f"{parts[0]}/{Path(parts[1]).stem}", f"{parts[0]}/{parts[1]}", "file"
+    return None
+
+
+def find_dataset(files: list[str], name: str) -> tuple[str, Literal["dir", "file"]]:
+    """Resolve a flat dataset name to its ``(repo_path, kind)``.
+
+    Resolving by flat name is what lets a user say ``"gold_512"`` without knowing its bucket.
+    Raises ``FileNotFoundError`` if nothing matches, ``ValueError`` if the name is ambiguous
+    across buckets - so download and delete can never silently hit the wrong one. Pure (no
+    network): the resolution rules are unit-tested against a plain list of paths."""
+    found: dict[str, Literal["dir", "file"]] = {}  # repo_path -> kind
     for f in files:
-        parts = f.split("/")
-        if len(parts) >= 3 and parts[1] == name:
-            found[f"{parts[0]}/{name}"] = "dir"
-        elif len(parts) == 2 and Path(parts[1]).stem == name and not f.endswith(".json"):
-            found[f] = "file"  # a .json is a sidecar of the data file, not a rival dataset
+        entry = dataset_entry(f.split("/"))
+        if entry and entry[0].split("/", 1)[1] == name:  # flat name = display_key minus its bucket
+            found[entry[1]] = entry[2]
     if not found:
         raise FileNotFoundError(
             f"{name!r} not found. Call quantem.data.list_datasets() "
@@ -296,16 +315,8 @@ def list_datasets(*, repo: str | None = None) -> list[str]:
     """List shared datasets as ``<bucket>/<name>`` (skips placeholders/docs)."""
     hf = _hf()
     repo_id = _resolve_repo(repo)
-    names = set()
-    for f in hf.list_repo_files(repo_id=repo_id, repo_type="dataset"):
-        parts = f.split("/")
-        if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
-            continue
-        if len(parts) >= 3:
-            names.add(f"{parts[0]}/{parts[1]}")
-        elif not parts[1].endswith(".json"):
-            names.add(f"{parts[0]}/{Path(parts[1]).stem}")
-    return sorted(names)
+    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
+    return sorted({e[0] for f in files if (e := dataset_entry(f.split("/")))})
 
 
 def delete(name: str, *, repo: str | None = None) -> list[str]:
@@ -357,15 +368,10 @@ def status(*, repo: str | None = None) -> dict:
         size = getattr(entry, "size", None)
         if size is None:
             continue  # folder entry, not a file
-        parts = entry.path.split("/")
-        if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
-            continue
-        if len(parts) >= 3:
-            key = f"{parts[0]}/{parts[1]}"
-        elif entry.path.endswith(".json"):
-            continue  # top-level sidecar, folded into its data file's dataset
-        else:
-            key = f"{parts[0]}/{Path(parts[1]).stem}"
+        classified = dataset_entry(entry.path.split("/"))
+        if classified is None:
+            continue  # not a dataset file (wrong bucket, placeholder, or a top-level sidecar)
+        key = classified[0]
         sizes[key] = sizes.get(key, 0) + size
         counts[key] = counts.get(key, 0) + 1
     datasets = [{"name": k, "files": counts[k], "size_mb": sizes[k] / 1e6} for k in sorted(sizes)]
