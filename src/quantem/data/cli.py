@@ -21,15 +21,24 @@ from pathlib import Path
 from quantem.data import download, list_datasets, read_meta, status, tree, upload
 from quantem.data.huggingface import auto_meta, parse_sidecar
 
+def _names(raw: str) -> list[str]:
+    """Comma-separated people -> a list, so a sidecar stores ``operators: [Jane Doe, Bob Lee]``
+    rather than one run-together string. A single name yields a one-element list."""
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 # The calibration a user is asked for at an interactive upload, per modality: (key, example,
-# cast, required). Auto-derived fields (modality, scan_shape/det_shape/shape, dtype) are never
-# prompted. Mirrors the canonical sidecar schema in quantem.widget.io.meta (kept in sync by
-# hand so quantem.data stays a standalone, widget-free transfer layer).
-_PROMPT_FIELDS: dict[str, list[tuple[str, object, type, bool]]] = {
+# cast, required). Auto-derived fields (modality, scan_shape/det_shape/shape, dtype, and what a
+# Velox .emd already carries: voltage/semiangle/magnification/FOV/date) are never prompted.
+# Roughly mirrors the canonical sidecar schema in quantem.widget.io.meta (kept in sync by hand
+# so quantem.data stays a standalone, widget-free transfer layer; `operators`/`pi` replace the
+# vague `source` here first - the widget schema is a follow-up).
+_PROMPT_FIELDS: dict[str, list[tuple[str, object, object, bool]]] = {
     "4dstem": [
         ("voltage_kV", 300, float, True),
         ("semiangle_mrad", 25, float, True),
-        ("source", "ncem", str, True),
+        ("operators", ["Jane Doe", "Sangjoon Bob Lee"], _names, True),
+        ("pi", "Colin Ophus", str, True),
         ("sample", "gold nanoparticles", str, True),
         ("date", "2026-06-25", str, True),
         ("scan_sampling_A", 0.2, float, False),
@@ -38,7 +47,8 @@ _PROMPT_FIELDS: dict[str, list[tuple[str, object, type, bool]]] = {
     ],
     "haadf": [
         ("voltage_kV", 300, float, True),
-        ("source", "ncem", str, True),
+        ("operators", ["Jane Doe", "Sangjoon Bob Lee"], _names, True),
+        ("pi", "Colin Ophus", str, True),
         ("sample", "gold nanoparticles", str, True),
         ("date", "2026-06-25", str, True),
         ("pixel_size_nm", 0.01, float, False),
@@ -179,17 +189,18 @@ def _prompt_meta(name: str, folder: str, from_file: dict | None = None) -> dict:
     return {key: value for key, value in meta.items() if value is not None}
 
 
-def _ask(key: str, example: object, cast: type, required: bool):
+def _ask(key: str, example: object, cast, required: bool):
     """Prompt for one field, re-asking until the value casts cleanly or is left blank."""
     tag = "required" if required else "optional"
+    shown = ", ".join(example) if isinstance(example, list) else example  # a list example reads as names
     while True:
-        raw = input(f"  {key} (e.g. {example}) [{tag}]: ").strip()
+        raw = input(f"  {key} (e.g. {shown}) [{tag}]: ").strip()
         if not raw:
             return None
         try:
             return cast(raw)
         except ValueError:
-            print(f"    '{raw}' is not a valid {cast.__name__}; try again or press Enter to skip.")
+            print(f"    '{raw}' is not valid for {key}; try again or press Enter to skip.")
 
 
 if __name__ == "__main__":

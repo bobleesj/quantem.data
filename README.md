@@ -58,7 +58,10 @@ quantem-data template 4dstem > cal.yaml   # or: template haadf
 modality: 4dstem
 voltage_kV: 300
 semiangle_mrad: 25
-source: ncem
+operators:
+  - Jane Doe
+  - Sangjoon Bob Lee
+pi: Colin Ophus
 sample: gold nanoparticles
 date: '2026-06-25'
 scan_sampling_A: 0.2
