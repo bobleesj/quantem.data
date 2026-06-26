@@ -2,6 +2,8 @@
 casting numbers, skipping blanks, and warning (not blocking) on missing required fields. No
 network - we feed answers through a fake ``input``."""
 import builtins
+import sys
+from types import SimpleNamespace
 
 from quantem.data import cli
 
@@ -36,3 +38,36 @@ def test_prompt_warns_but_keeps_going_when_required_is_skipped(monkeypatch, caps
 def test_ask_reprompts_until_a_number_parses(monkeypatch):
     _answers(monkeypatch, ["not-a-number", "300"])
     assert cli._ask("voltage_kV", 300, float, required=True) == 300.0
+
+
+def _capture_upload(monkeypatch):
+    """Stub the real HF upload so the full `upload` command can run with no network."""
+    captured = {}
+    def fake_upload(path, name=None, *, folder=None, repo=None, meta=None):
+        captured.update(path=path, name=name, folder=folder, meta=meta)
+        return "https://hf/commit"
+    monkeypatch.setattr(cli, "upload", fake_upload)
+    monkeypatch.setattr(sys, "stdin", SimpleNamespace(isatty=lambda: True))  # force the interactive path
+    return captured
+
+
+def test_upload_command_prompts_confirms_then_uploads(monkeypatch, tmp_path):
+    img = tmp_path / "gold.tif"
+    img.write_bytes(b"x")
+    captured = _capture_upload(monkeypatch)
+    # haadf order: voltage, source, sample, date, pixel_size_nm, facility, then the confirm
+    _answers(monkeypatch, ["300", "ncem", "gold", "2026-06-25", "", "", "y"])
+    assert cli.main(["upload", str(img)]) == 0
+    assert captured["folder"] == "haadf"      # auto from a single file
+    assert captured["name"] == "gold"          # auto from the stem
+    assert captured["meta"]["voltage_kV"] == 300.0
+    assert captured["meta"]["sample"] == "gold"
+
+
+def test_upload_command_aborts_on_no_confirmation(monkeypatch, tmp_path):
+    img = tmp_path / "gold.tif"
+    img.write_bytes(b"x")
+    captured = _capture_upload(monkeypatch)
+    _answers(monkeypatch, ["300", "ncem", "gold", "2026-06-25", "", "", "n"])  # decline
+    assert cli.main(["upload", str(img)]) == 1
+    assert captured == {}  # upload never called
