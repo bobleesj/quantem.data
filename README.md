@@ -41,6 +41,7 @@ example for each field) and shows you the result before writing:
 
 ```bash
 quantem-data upload ./gold_512        # prompts for voltage, semiangle, sample, date, ...
+quantem-data template 4dstem > cal.json        # an example to fill in, never a blank file
 quantem-data upload scan.emd --meta cal.json   # or script it with a JSON sidecar
 quantem-data upload scan.emd --no-input        # or attach nothing
 ```

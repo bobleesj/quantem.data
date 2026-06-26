@@ -5,6 +5,7 @@ Hugging Face repo without writing any ``huggingface_hub`` code.
     quantem-data status                        # repo summary (datasets, file counts, sizes)
     quantem-data meta gold_512                 # print a dataset's calibration sidecar
     quantem-data download gold_512 --out ./d   # pull one dataset by flat name
+    quantem-data template 4dstem > cal.json    # an example sidecar to fill in, not start blank
     quantem-data upload ./gold_512             # asks for calibration, then uploads
 
 `list` / `status` / `meta` / `download` are read-only and need no token (the repo is
@@ -65,6 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     p_meta = sub.add_parser("meta", help="Print a dataset's calibration sidecar (or 'no metadata').")
     p_meta.add_argument("name", help="Dataset name (flat, e.g. gold_512).")
 
+    p_tmpl = sub.add_parser("template", help="Print an example calibration sidecar to fill in and pass to --meta.")
+    p_tmpl.add_argument("modality", nargs="?", default="4dstem", choices=sorted(_PROMPT_FIELDS),
+                        help="Which schema (default: 4dstem).")
+
     p_dl = sub.add_parser("download", help="Download one dataset by flat name.")
     p_dl.add_argument("name", help="Dataset name (flat, e.g. gold_512).")
     p_dl.add_argument("--out", default=None, help="Directory to download into (default: HF cache).")
@@ -106,6 +111,9 @@ def _dispatch(args: argparse.Namespace) -> int:
         meta = read_meta(args.name, repo=args.repo)
         print(json.dumps(meta, indent=2) if meta else f"{args.name!r}: no metadata")
         return 0
+    if args.command == "template":
+        print(json.dumps(_template_meta(args.modality), indent=2))
+        return 0
     if args.command == "download":
         path = download(args.name, repo=args.repo, out=args.out)
         print(path)
@@ -134,6 +142,14 @@ def _upload(args: argparse.Namespace) -> int:
     url = upload(args.path, name, folder=folder, repo=args.repo, meta=meta)
     print(url)
     return 0
+
+
+def _template_meta(modality: str) -> dict:
+    """An example sidecar for a modality: every field with a plausible value, so a user edits
+    a filled file instead of starting blank. Built from the same field table as the prompts,
+    so the two never drift. Auto-derived fields (shapes, dtype) are left out - they come from
+    the data file at upload."""
+    return {"modality": modality, **{key: example for key, example, _, _ in _PROMPT_FIELDS[modality]}}
 
 
 def _prompt_meta(name: str, folder: str) -> dict:

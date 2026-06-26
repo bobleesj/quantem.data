@@ -40,6 +40,15 @@ def test_ask_reprompts_until_a_number_parses(monkeypatch):
     assert cli._ask("voltage_kV", 300, float, required=True) == 300.0
 
 
+def test_template_is_fillable_example_matching_the_prompts(capsys):
+    assert cli.main(["template", "4dstem"]) == 0
+    import json
+    meta = json.loads(capsys.readouterr().out)  # must be valid JSON, ready for --meta
+    assert meta["modality"] == "4dstem"
+    assert meta["voltage_kV"] == 300                      # example value, not blank
+    assert set(meta) == {"modality"} | {k for k, *_ in cli._PROMPT_FIELDS["4dstem"]}
+
+
 def _capture_upload(monkeypatch):
     """Stub the real HF upload so the full `upload` command can run with no network."""
     captured = {}
