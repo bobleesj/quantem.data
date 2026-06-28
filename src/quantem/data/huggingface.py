@@ -406,6 +406,101 @@ def list_datasets(*, repo: str | None = None) -> list[str]:
     return sorted({e[0] for f in files if (e := dataset_entry(f.split("/")))})
 
 
+class _DatasetCatalog:
+    """Notebook-friendly dataset summary returned by ``datasets()``.
+
+    This is deliberately a lightweight view over ``status()``: no data files are
+    downloaded, and each row shows the flat name a microscopist can pass to
+    ``load(...)``.
+    """
+
+    def __init__(self, rows: list[dict], repo_id: str):
+        self.rows = rows
+        self.repo_id = repo_id
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __getitem__(self, index):
+        return self.rows[index]
+
+    def _repr_html_(self) -> str:
+        def esc(value) -> str:
+            import html  # noqa: PLC0415
+            return html.escape(str(value))
+
+        body = "".join(
+            "<tr>"
+            f"<td><code>{esc(row['name'])}</code></td>"
+            f"<td>{esc(row['modality'])}</td>"
+            f"<td style=\"text-align:right\">{row['size_mb']:.1f} MB</td>"
+            f"<td><code>qdata.load(&quot;{esc(row['name'])}&quot;)</code></td>"
+            "</tr>"
+            for row in self.rows
+        )
+        return (
+            '<table style="border-collapse:collapse">'
+            "<thead><tr><th>Name</th><th>Data</th><th>Size</th><th>Load</th></tr></thead>"
+            f"<tbody>{body}</tbody></table>"
+        )
+
+    def __repr__(self) -> str:
+        if not self.rows:
+            return "No datasets found."
+        widths = {
+            "name": max(len("name"), *(len(row["name"]) for row in self.rows)),
+            "modality": max(len("data"), *(len(row["modality"]) for row in self.rows)),
+        }
+        lines = [
+            f"{'name':<{widths['name']}}  {'data':<{widths['modality']}}  size      load",
+            f"{'-' * widths['name']}  {'-' * widths['modality']}  --------  ------------------------",
+        ]
+        for row in self.rows:
+            lines.append(
+                f"{row['name']:<{widths['name']}}  "
+                f"{row['modality']:<{widths['modality']}}  "
+                f"{row['size_mb']:>7.1f} MB  qdata.load({row['name']!r})"
+            )
+        return "\n".join(lines)
+
+
+def datasets(*, repo: str | None = None, modality: str | None = None) -> _DatasetCatalog:
+    """Return a notebook-friendly catalog of available public datasets.
+
+    Unlike ``list_datasets()``, this is meant for humans reading a notebook: it
+    shows the flat name to load, the data type, size, and the exact load call.
+    It never downloads the actual data.
+
+    Parameters
+    ----------
+    repo
+        Hugging Face dataset repo. Defaults to ``bobleesj/quantem-data``.
+    modality
+        Optional bucket filter such as ``"haadf"`` or ``"4dstem"``.
+
+    Examples
+    --------
+    >>> datasets(modality="haadf")
+    name             data   size      load
+    ...              ...    ...       qdata.load('...')
+    """
+    snap = status(repo=repo)
+    rows = []
+    for item in snap["datasets"]:
+        bucket, short = item["name"].split("/", 1)
+        if modality is not None and bucket != modality:
+            continue
+        rows.append({
+            "name": short,
+            "modality": bucket,
+            "size_mb": item["size_mb"],
+        })
+    return _DatasetCatalog(rows, snap["repo"])
+
+
 def delete(name: str, *, repo: str | None = None) -> list[str]:
     """Delete a shared dataset by flat name; returns the repo paths removed.
 

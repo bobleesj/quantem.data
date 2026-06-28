@@ -200,3 +200,17 @@ def test_status_aggregates_only_real_datasets(monkeypatch):
     assert by_name["4dstem/gold"]["files"] == 2
     assert by_name["4dstem/gold"]["size_mb"] == pytest.approx(4.0)
     assert snap["logged_in_as"] == "tester"
+
+
+def test_datasets_returns_human_friendly_load_table(monkeypatch):
+    tree = [
+        _Entry("4dstem/gold/master.h5", 1_000_000),
+        _Entry("haadf/silver.tif", 2_000_000),
+    ]
+    _install(monkeypatch, _FakeHub(tree=tree))
+    catalog = hg.datasets(modality="haadf")
+
+    assert list(catalog) == [{"name": "silver", "modality": "haadf", "size_mb": 2.0}]
+    text = repr(catalog)
+    assert "qdata.load('silver')" in text
+    assert "haadf/silver" not in text

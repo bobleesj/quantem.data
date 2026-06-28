@@ -11,6 +11,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from quantem.data.huggingface import (
     browse,
+    datasets,
     download,
     list_datasets,
     load,
@@ -28,6 +29,7 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     "browse",
+    "datasets",
     "download",
     "list_datasets",
     "load",
