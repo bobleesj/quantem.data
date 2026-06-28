@@ -137,15 +137,48 @@ def _fake_widget(monkeypatch):
 def test_load_single_image_goes_through_read_image(monkeypatch, tmp_path):
     img = tmp_path / "gold.tif"
     img.write_bytes(b"x")
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None: img)
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: img)
+    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None: None)
     _fake_widget(monkeypatch)
     assert hg.load("gold") == ("image", img)
+
+
+def test_load_folder_backed_npy_image_goes_through_read_image(monkeypatch, tmp_path):
+    folder = tmp_path / "gold_haadf_npy"
+    folder.mkdir()
+    img = folder / "data.npy"
+    img.write_bytes(b"x")
+    (folder / "meta.yaml").write_text("pixel_size_nm: 0.018\n")
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: folder)
+    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None: None)
+    _fake_widget(monkeypatch)
+    assert hg.load("gold_haadf_npy") == ("image", img)
+
+
+def test_load_image_applies_sidecar_calibration(monkeypatch, tmp_path):
+    img = tmp_path / "gold.tif"
+    img.write_bytes(b"x")
+    dataset = SimpleNamespace(name="raw", sampling=[1, 1], units=["pixels", "pixels"], metadata={})
+    fake_io = SimpleNamespace(read_image=lambda path: dataset)
+    monkeypatch.setitem(sys.modules, "quantem.widget", SimpleNamespace(io=fake_io))
+    monkeypatch.setitem(sys.modules, "quantem.widget.io", fake_io)
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: img)
+    monkeypatch.setattr(
+        hg,
+        "read_meta",
+        lambda name, repo=None: {"name": "Gold", "sampling": [0.018, 0.018], "units": ["nm", "nm"]},
+    )
+    assert hg.load("gold") is dataset
+    assert dataset.name == "Gold"
+    assert dataset.sampling == [0.018, 0.018]
+    assert dataset.units == ["nm", "nm"]
+    assert dataset.metadata["name"] == "Gold"
 
 
 def test_load_acquisition_folder_goes_through_4d_loader(monkeypatch, tmp_path):
     folder = tmp_path / "gold_512"
     folder.mkdir()
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None: folder)
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: folder)
     _fake_widget(monkeypatch)
     assert hg.load("gold_512") == ("4d", ["m1", "m2"])  # dir -> load(discover_masters(...))
 

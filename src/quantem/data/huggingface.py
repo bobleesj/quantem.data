@@ -353,11 +353,29 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
         print(f"Downloading '{name}' from Hugging Face ({repo_id}) over the internet - "
               "speed depends on your connection, not your computer ...", flush=True)
     t0 = time.perf_counter()
-    root = hf.snapshot_download(
-        repo_id=repo_id, repo_type="dataset",
-        allow_patterns=pattern,
-        local_dir=str(out) if out is not None else None,
-    )
+    was_disabled = False
+    if not verbose:
+        try:
+            from huggingface_hub.utils import (  # noqa: PLC0415
+                are_progress_bars_disabled,
+                disable_progress_bars,
+                enable_progress_bars,
+            )
+            was_disabled = are_progress_bars_disabled()
+            disable_progress_bars()
+        except ImportError:
+            enable_progress_bars = None
+    else:
+        enable_progress_bars = None
+    try:
+        root = hf.snapshot_download(
+            repo_id=repo_id, repo_type="dataset",
+            allow_patterns=pattern,
+            local_dir=str(out) if out is not None else None,
+        )
+    finally:
+        if enable_progress_bars is not None and not was_disabled:
+            enable_progress_bars()
     result = Path(root) / target_rel
     if verbose:
         dt = time.perf_counter() - t0
@@ -485,14 +503,20 @@ def tree(*, repo: str | None = None) -> None:
     bobleesj/quantem-data  (12.3 GB total, 8 datasets)
     ...
     """
+    print(_tree_text(repo=repo))
+
+
+def _tree_text(*, repo: str | None = None) -> str:
+    """The dataset tree as text, shared by ``tree()`` and ``browse().__repr__()``."""
     groups, snap = _by_bucket(repo=repo)
-    print(f"{snap['repo']}  ({snap['total_mb'] / 1000:.1f} GB total, {len(snap['datasets'])} datasets)")
+    lines = [f"{snap['repo']}  ({snap['total_mb'] / 1000:.1f} GB total, {len(snap['datasets'])} datasets)"]
     for bucket in sorted(groups):
         items = sorted(groups[bucket], key=lambda d: d["name"])
         gb = sum(d["size_mb"] for d in items) / 1000
-        print(f"\n{bucket}/   ({len(items)} datasets, {gb:.2f} GB)")
+        lines.append(f"\n{bucket}/   ({len(items)} datasets, {gb:.2f} GB)")
         for d in items:
-            print(f"  {d['size_mb']:>9.1f} MB  {d['name'].split('/', 1)[1]}")
+            lines.append(f"  {d['size_mb']:>9.1f} MB  {d['name'].split('/', 1)[1]}")
+    return "\n".join(lines)
 
 
 THUMB_DIR = ".thumbnails"  # top-level tree, OUTSIDE the data buckets, so a thumbnail
@@ -505,11 +529,28 @@ def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
     base64 data URI for inline display, or None if the dataset has no thumbnail yet."""
     import base64  # noqa: PLC0415
     hf = _hf()
+    was_disabled = False
     try:
-        path = hf.hf_hub_download(repo_id=repo_id, repo_type="dataset",
-                                   filename=f"{THUMB_DIR}/{full_name}.png")
+        from huggingface_hub.utils import (  # noqa: PLC0415
+            are_progress_bars_disabled,
+            disable_progress_bars,
+            enable_progress_bars,
+        )
+        was_disabled = are_progress_bars_disabled()
+        disable_progress_bars()
+    except ImportError:
+        enable_progress_bars = None
+    try:
+        path = hf.hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=f"{THUMB_DIR}/{full_name}.png",
+        )
     except (hf.errors.EntryNotFoundError, hf.errors.HfHubHTTPError):
         return None  # no thumbnail uploaded for this dataset yet
+    finally:
+        if enable_progress_bars is not None and not was_disabled:
+            enable_progress_bars()
     b64 = base64.b64encode(Path(path).read_bytes()).decode()
     return f"data:image/png;base64,{b64}"
 
@@ -549,8 +590,8 @@ class _Gallery:
         return "".join(parts)
 
     def __repr__(self) -> str:
-        tree(repo=self._repo_id if self._repo_id != DEFAULT_REPO else None)
-        return ""
+        repo = self._repo_id if self._repo_id != DEFAULT_REPO else None
+        return _tree_text(repo=repo)
 
 
 def browse(*, repo: str | None = None) -> "_Gallery":
@@ -566,7 +607,53 @@ def browse(*, repo: str | None = None) -> "_Gallery":
     return _Gallery(repo)
 
 
-def load(name: str, *, repo: str | None = None, out: str | Path | None = None, **kwargs):
+def _image_payload(path: Path) -> Path | None:
+    """Return the image file inside a folder dataset, if it is an image folder.
+
+    Hugging Face stores some single images as folders so their metadata can ride
+    next to ``data.npy``. Those are still HAADF image datasets from a user's
+    perspective, not 4D-STEM acquisitions.
+    """
+    image_suffixes = {".npy", ".tif", ".tiff", ".emd", ".png", ".jpg", ".jpeg"}
+    if path.is_file():
+        return path
+    preferred = path / "data.npy"
+    if preferred.exists():
+        return preferred
+    payloads = [
+        child
+        for child in path.iterdir()
+        if child.is_file() and child.suffix.lower() in image_suffixes
+    ]
+    return payloads[0] if len(payloads) == 1 else None
+
+
+def _apply_image_meta(dataset, meta: dict | None):
+    """Attach sidecar calibration to an image dataset when the object supports it."""
+    if not meta:
+        return dataset
+    for attr in ("name", "sampling", "units", "signal_units"):
+        if attr in meta and hasattr(dataset, attr):
+            try:
+                setattr(dataset, attr, meta[attr])
+            except (AttributeError, TypeError):
+                pass
+    if hasattr(dataset, "metadata"):
+        try:
+            dataset.metadata.update(meta)
+        except (AttributeError, TypeError):
+            pass
+    return dataset
+
+
+def load(
+    name: str,
+    *,
+    repo: str | None = None,
+    out: str | Path | None = None,
+    verbose: bool = True,
+    **kwargs,
+):
     """Download a dataset AND return it ready to use, in one call.
 
     The intuitive primitive: ``ds = load("gold_haadf")`` instead of download-a-path then
@@ -574,7 +661,8 @@ def load(name: str, *, repo: str | None = None, out: str | Path | None = None, *
     Arina masters) returns the loaded 4D data; a single image returns a ``Dataset2d``.
     Loading lives in ``quantem.widget`` (the renderer), imported lazily so ``quantem.data``
     stays a standalone, widget-free transfer layer; extra kwargs pass through to the 4D
-    loader (e.g. ``det_bin=``).
+    loader (e.g. ``det_bin=``). Set ``verbose=False`` in executed docs or tests to keep
+    Hugging Face cache messages out of notebook output.
 
     Examples
     --------
@@ -582,7 +670,7 @@ def load(name: str, *, repo: str | None = None, out: str | Path | None = None, *
     >>> ds.array.shape
     (2048, 2048)
     """
-    path = download(name, repo=repo, out=out)
+    path = download(name, repo=repo, out=out, verbose=verbose)
     try:
         from quantem.widget import io as _io  # noqa: PLC0415
     except ImportError as exc:
@@ -590,6 +678,9 @@ def load(name: str, *, repo: str | None = None, out: str | Path | None = None, *
             "load() needs the quantem.widget loader: pip install quantem.widget "
             "(download() alone returns the file path without it)."
         ) from exc
+    image_path = _image_payload(Path(path))
+    if image_path is not None:
+        return _apply_image_meta(_io.read_image(image_path), read_meta(name, repo=repo))
     if Path(path).is_dir():
         return _io.load(_io.discover_masters(path), **kwargs)  # 4D-STEM acquisition
-    return _io.read_image(path)  # single image -> Dataset2d
+    return _apply_image_meta(_io.read_image(path), read_meta(name, repo=repo))
