@@ -868,17 +868,22 @@ def load(
     repo: str | None = None,
     out: str | Path | None = None,
     verbose: bool = True,
+    revision: str | None = None,
     **kwargs,
 ):
     """Download a dataset AND return it ready to use, in one call.
 
-    The intuitive primitive: ``ds = load("gold_haadf")`` instead of download-a-path then
-    hand it to a separate loader. Dispatches by shape - a 4D-STEM acquisition (a folder of
-    Arina masters) returns the loaded 4D data; a single image returns a ``Dataset2d``.
-    Loading lives in ``quantem.widget`` (the renderer), imported lazily so ``quantem.data``
-    stays a standalone, widget-free transfer layer; extra kwargs pass through to the 4D
-    loader (e.g. ``det_bin=``). Set ``verbose=False`` in executed docs or tests to keep
-    Hugging Face cache messages out of notebook output.
+    A single image returns a ``Dataset2d`` through ``quantem.widget.io.read_image``.
+    Native 4D-STEM inputs use ``quantem.gpu.io.load``: CUDA/MPS acquisitions
+    retain the loader's encoded storage and native detector geometry. Extra
+    keyword arguments pass to that loader, such as ``backend="cuda"`` or
+    ``hot_pixel_correction="none"``. Read bounded regions from the returned
+    acquisition and close it when finished. A master-file folder returns a list
+    of independent acquisitions; close each one. Both optional packages are
+    imported only for their respective input type; download alone needs neither.
+    ``revision`` pins the downloaded input and metadata together and is not
+    forwarded to either loader. Set ``verbose=False`` to suppress the transfer
+    summary.
 
     Examples
     --------
@@ -886,17 +891,34 @@ def load(
     >>> ds.array.shape
     (2048, 2048)
     """
-    path = download(name, repo=repo, out=out, verbose=verbose)
+    path = Path(download(name, repo=repo, out=out, verbose=verbose, revision=revision))
+    if path.is_dir() and path.parent.name == "widget":
+        raise ValueError(
+            f"{name!r} is a widget input collection, not one acquisition. "
+            "Use download() and the matching quantem.widget.datasets tutorial helper "
+            "to open its monitor or image session."
+        )
+    image_path = _image_payload(path)
+    if path.parent.name == "4dstem" or image_path is None:
+        try:
+            from quantem.gpu import io as gpu_io  # noqa: PLC0415
+        except ImportError as exc:
+            raise ImportError(
+                "Loading native 4D-STEM inputs requires quantem.gpu. "
+                "Install it with `pip install quantem.gpu` and use a CUDA or MPS "
+                "device; download() alone returns the path without loading data."
+            ) from exc
+        source = path / "data.npy" if path.is_dir() and (path / "data.npy").is_file() else path
+        if source.is_dir():
+            source = gpu_io.discover(str(source), verbose=verbose)
+        return gpu_io.load(source, **kwargs)
     try:
-        from quantem.widget import io as _io  # noqa: PLC0415
+        from quantem.widget import io as widget_io  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(
-            "load() needs the quantem.widget loader: pip install quantem.widget "
+            "Loading images requires quantem.widget: pip install quantem.widget "
             "(download() alone returns the file path without it)."
         ) from exc
-    image_path = _image_payload(Path(path))
-    if image_path is not None:
-        return _apply_image_meta(_io.read_image(image_path), read_meta(name, repo=repo))
-    if Path(path).is_dir():
-        return _io.load(_io.discover_masters(path), **kwargs)  # 4D-STEM acquisition
-    return _apply_image_meta(_io.read_image(path), read_meta(name, repo=repo))
+    return _apply_image_meta(
+        widget_io.read_image(image_path), read_meta(name, repo=repo, revision=revision),
+    )

@@ -141,14 +141,8 @@ def test_delete_file_dataset_removes_data_and_sidecar(monkeypatch):
 # --- load (download + dispatch to the widget loader) ----------------------------
 
 def _fake_widget(monkeypatch):
-    """Stand in for quantem.widget.io so load()'s dispatch is testable without the renderer
-    installed: read_image / load / discover_masters just echo their inputs so we can see
-    which path load() took."""
-    fake_io = SimpleNamespace(
-        read_image=lambda path: ("image", path),
-        load=lambda masters, **kw: ("4d", masters),
-        discover_masters=lambda folder: ["m1", "m2"],
-    )
+    """Match rc41's image-only I/O surface; removed acquisition verbs are absent."""
+    fake_io = SimpleNamespace(read_image=lambda path: ("image", path))
     monkeypatch.setitem(sys.modules, "quantem.widget", SimpleNamespace(io=fake_io))
     monkeypatch.setitem(sys.modules, "quantem.widget.io", fake_io)
 
@@ -156,8 +150,8 @@ def _fake_widget(monkeypatch):
 def test_load_single_image_goes_through_read_image(monkeypatch, tmp_path):
     img = tmp_path / "gold.tif"
     img.write_bytes(b"x")
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: img)
-    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None: None)
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True, revision=None: img)
+    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None, revision=None: None)
     _fake_widget(monkeypatch)
     assert hg.load("gold") == ("image", img)
 
@@ -168,8 +162,8 @@ def test_load_folder_backed_npy_image_goes_through_read_image(monkeypatch, tmp_p
     img = folder / "data.npy"
     img.write_bytes(b"x")
     (folder / "meta.yaml").write_text("pixel_size_nm: 0.018\n")
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: folder)
-    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None: None)
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True, revision=None: folder)
+    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None, revision=None: None)
     _fake_widget(monkeypatch)
     assert hg.load("gold_haadf_npy") == ("image", img)
 
@@ -181,11 +175,11 @@ def test_load_image_applies_sidecar_calibration(monkeypatch, tmp_path):
     fake_io = SimpleNamespace(read_image=lambda path: dataset)
     monkeypatch.setitem(sys.modules, "quantem.widget", SimpleNamespace(io=fake_io))
     monkeypatch.setitem(sys.modules, "quantem.widget.io", fake_io)
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: img)
+    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True, revision=None: img)
     monkeypatch.setattr(
         hg,
         "read_meta",
-        lambda name, repo=None: {"name": "Gold", "sampling": [0.018, 0.018], "units": ["nm", "nm"]},
+        lambda name, repo=None, revision=None: {"name": "Gold", "sampling": [0.018, 0.018], "units": ["nm", "nm"]},
     )
     assert hg.load("gold") is dataset
     assert dataset.name == "Gold"
@@ -194,12 +188,38 @@ def test_load_image_applies_sidecar_calibration(monkeypatch, tmp_path):
     assert dataset.metadata["name"] == "Gold"
 
 
-def test_load_acquisition_folder_goes_through_4d_loader(monkeypatch, tmp_path):
-    folder = tmp_path / "gold_512"
-    folder.mkdir()
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True: folder)
-    _fake_widget(monkeypatch)
-    assert hg.load("gold_512") == ("4d", ["m1", "m2"])  # dir -> load(discover_masters(...))
+@pytest.mark.parametrize("payload", ["masters", "data.npy", "scan.h5"])
+def test_load_native_4dstem_uses_gpu_io_without_widget(monkeypatch, tmp_path, payload):
+    folder = tmp_path / "4dstem" / "gold_512"
+    folder.mkdir(parents=True)
+    path = folder
+    if payload == "data.npy":
+        (folder / payload).write_bytes(b"npy")
+    elif payload == "scan.h5":
+        path = folder.parent / payload
+        path.write_bytes(b"hdf5")
+    monkeypatch.setattr(hg, "download", lambda *a, **kw: path)
+    monkeypatch.setitem(sys.modules, "quantem.widget", None)
+    calls = []
+    fake_io = SimpleNamespace(
+        discover=lambda path, **kw: calls.append(("discover", path, kw)) or ["master.h5"],
+        load=lambda source, **kw: calls.append(("load", source, kw)) or "resident",
+    )
+    monkeypatch.setitem(sys.modules, "quantem.gpu", SimpleNamespace(io=fake_io))
+    options = {"backend": "cuda", "representation": "encoded", "hot_pixel_correction": "none"}
+    assert hg.load("4dstem/gold_512", revision="input-commit", verbose=False, **options) == "resident"
+    expected_source = ["master.h5"] if payload == "masters" else folder / payload if payload == "data.npy" else path
+    assert calls[-1] == ("load", expected_source, options)
+    assert len(calls) == (2 if payload == "masters" else 1)
+
+
+def test_load_native_missing_gpu_explains_download_alternative(monkeypatch, tmp_path):
+    folder = tmp_path / "4dstem" / "gold"
+    folder.mkdir(parents=True)
+    monkeypatch.setattr(hg, "download", lambda *a, **kw: folder)
+    monkeypatch.setitem(sys.modules, "quantem.gpu", None)
+    with pytest.raises(ImportError, match="pip install quantem.gpu.*download"):
+        hg.load("4dstem/gold")
 
 
 # --- status ---------------------------------------------------------------------
@@ -324,6 +344,8 @@ def test_pinned_widget_collection_reuses_cache_and_keeps_all_companions(monkeypa
     ))
     assert ("cache", tmp_path / "cache", True) in hub.calls
     assert not (tmp_path / "cache" / "widget/other").exists()
+    with pytest.raises(ValueError, match="widget input collection"):
+        hg.load("widget/ducky", revision="pinned-commit", verbose=False)
 
 
 def test_single_image_export_includes_calibration_and_missing_shard_fails(monkeypatch, tmp_path):
