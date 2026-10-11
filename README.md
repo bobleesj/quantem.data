@@ -22,8 +22,62 @@ ds = load("gold_drift_0deg")    # download, then return the data ready to use
 read_meta("gold_512")           # calibration: voltage, semiangle, FOV, ...
 ```
 
-`load` returns a `Dataset2d` for a single image, or the loaded 4D data for an acquisition.
+`load` uses `quantem.widget` for images and `quantem.gpu.io.load` for native
+4D-STEM acquisitions. Install the corresponding optional package. CUDA/MPS
+acquisitions retain encoded storage and native detector geometry; read bounded
+regions from each returned acquisition and close it when finished. Master-file
+folders return a list of independent acquisitions.
 Want only the file path? Use `download(name)`.
+
+## Reuse inputs across tutorials
+
+One input dataset can serve several algorithms and viewers. Shared acquisitions
+stay under `4dstem/` and `haadf/`, synthetic denoising inputs under `denoise/`,
+and viewer input collections under `widget/`. Tutorial code belongs in its software
+repository; Hugging Face holds data, descriptive metadata and checksums only.
+
+Use a qualified dataset name and an immutable revision in tutorial input
+specifications. Unique flat names remain supported for interactive use:
+
+```python
+from quantem.data import download
+
+folder = download(
+    "denoise/simulated_au_nanobeam_pg_dose1",
+    revision="475260be22b5a00704f58382517a44aff94e252e",
+)
+master = folder / "truth-events-dose-1.0_master.h5"
+```
+
+`download` returns the existing dataset folder with its companion files.
+Pass `master` to `quantem.gpu.io.load` for accelerated acquisition loading,
+then use the loaded data with the algorithm or widget. TV and SHINE reuse the
+same synthetic expectation; noisy observations and training results are made
+locally. No viewer-specific copy or upload is needed. Use the same `revision`
+with `read_meta` to retrieve matching metadata. This API is a development
+change; use this checkout until a release includes it.
+
+`widget/ducky` is a synthetic reconstruction monitor with snapshot companions;
+`widget/gold_session` is an image session. These collections are available at
+the verified R1 revision:
+
+```python
+folder = download(
+    "widget/ducky",
+    revision="b30a28c295494b51139415d540819c4cbfde49b6",
+)
+```
+
+Open them through the matching `quantem.widget.datasets` tutorial helpers.
+Existing public paths remain for older clients. The unchanged denoising input
+above still uses R0; use R1 for the new `widget/` paths.
+
+`download(..., cache_dir="./hf-cache")` keeps the Hub's revision-specific cache.
+Repeated calls reuse cached files but may still check the network. Use
+`force_download=True` to replace cached copies. `out=` exports the selected
+dataset and metadata under their repository paths; use separate output
+directories for different revisions. Transfer and file-presence checks do not
+rehash cached scientific files or establish their calibration.
 
 ## Command line
 
@@ -32,9 +86,25 @@ quantem-data list                          # every shared dataset name
 quantem-data tree                          # grouped by bucket, with sizes
 quantem-data meta gold_512                 # calibration sidecar
 quantem-data download gold_512 --out ./d   # pull one dataset
+quantem-data list --revision 475260be22b5a00704f58382517a44aff94e252e
 ```
 
 ## Publish (owner)
+
+The source-owned contribution checker preserves the provenance, permission,
+shape, sampling and units checks formerly hosted with the public data:
+
+```bash
+cp scripts/templates/dataset-meta.json /path/to/new-dataset/meta.json
+# Replace examples with documented acquisition details and permission.
+python scripts/check_dataset_metadata.py /path/to/new-dataset
+```
+
+This is an opt-in check for new contributions, separate from the calibration
+sidecars read at runtime. It does not retroactively require legacy datasets to
+use this schema. Leave unknown provenance unknown; do not invent permissions,
+dates or calibration to make validation pass. The checker and template live in
+this source checkout, not in the installed runtime or Hugging Face data tree.
 
 From the terminal, just point at the data - `upload` asks for the calibration (with an
 example for each field) and shows you the result before writing:
