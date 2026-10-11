@@ -193,7 +193,7 @@ def test_status_aggregates_only_real_datasets(monkeypatch):
         _Entry("notebooks/demo.ipynb", 9_000_000),     # not a dataset bucket -> ignored
         _Entry("4dstem/placeholder_x/keep.txt", 5),    # placeholder -> ignored
     ]
-    hub = _install(monkeypatch, _FakeHub(tree=tree))
+    _install(monkeypatch, _FakeHub(tree=tree))
     snap = hg.status()
     by_name = {d["name"]: d for d in snap["datasets"]}
     assert set(by_name) == {"4dstem/gold", "haadf/silver"}
@@ -214,3 +214,47 @@ def test_datasets_returns_human_friendly_load_table(monkeypatch):
     text = repr(catalog)
     assert "qdata.load('silver')" in text
     assert "haadf/silver" not in text
+
+
+def test_discovery_includes_workflows_without_listing_code(monkeypatch):
+    tree = [
+        _Entry("denoise/gold/truth_master.h5", 1000),
+        _Entry("denoise/gold/meta.json", 100),
+        _Entry("widget/session/frame.emd", 2000),
+        _Entry("widget/ducky/show1d_monitor.jsonl", 200),
+        _Entry("widget/ducky/metadata.json", 100),
+        _Entry("widget/notes/metadata.json", 100),
+        _Entry("survey/session/frame.emd", 2000),  # retired catalog bucket
+        _Entry("denoise/README.md", 500),
+        _Entry("denoise/tutorial/run.ipynb", 500),
+        _Entry("denoise/notes/meta.json", 500),
+        _Entry("haadf/gold.tif", 3000),
+    ]
+    _install(monkeypatch, _FakeHub(tree=tree, files=[entry.path for entry in tree]))
+    assert hg.list_datasets() == ["denoise/gold", "haadf/gold", "widget/ducky", "widget/session"]
+    catalog = hg.datasets()
+    rows = {row["name"]: row for row in catalog}
+    assert set(rows) == {"denoise/gold", "haadf/gold", "session", "ducky"}
+    assert rows["denoise/gold"]["size_mb"] == pytest.approx(0.0011)
+    assert "qdata.download('session')" in repr(catalog)
+    assert "qdata.load('session')" not in repr(catalog)
+    assert hg.find_dataset([entry.path for entry in tree], "widget/session") == (
+        "widget/session", "dir",
+    )
+    assert hg._find_sidecar([entry.path for entry in tree], "ducky") == "widget/ducky/metadata.json"
+    assert "qdata.download('ducky')" in repr(catalog)
+
+
+def test_qualified_selection_keeps_the_right_metadata_and_delete_target(monkeypatch):
+    files = [
+        "4dstem/gold/master.h5", "4dstem/gold/meta.json",
+        "haadf/gold.tif", "haadf/gold.yaml",
+    ]
+    hub = _install(monkeypatch, _FakeHub(files=files))
+    assert hg.find_dataset(files, "4dstem/gold") == ("4dstem/gold", "dir")
+    assert hg.find_dataset(files, "haadf/gold.tif") == ("haadf/gold.tif", "file")
+    assert hg._find_sidecar(files, "haadf/gold") == "haadf/gold.yaml"
+    with pytest.raises(ValueError, match="qualified dataset"):
+        hg._find_sidecar(files, "gold")
+    assert hg.delete("haadf/gold") == ["haadf/gold.tif", "haadf/gold.yaml"]
+    assert not any("4dstem" in call[1] for call in hub.calls if call[0].startswith("delete"))

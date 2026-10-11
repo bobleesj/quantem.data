@@ -6,11 +6,12 @@ install ``quantem.data`` once and never touch ``huggingface_hub`` directly.
 
 A single dataset repo (default ``bobleesj/quantem-data``, override with the
 ``QUANTEM_DATA_REPO`` env var or a ``repo=`` argument) is the storage backend.
-Keep it simple: two top-level buckets, ``4dstem/`` for acquisitions and
-``haadf/`` for images, each holding one folder/file per dataset (``4dstem/gold_512/``,
-``haadf/gold_haadf.tif``). An Arina acquisition keeps its master + ``_data_*.h5``
+Shared acquisitions live under ``4dstem/`` and ``haadf/``; ``denoise/`` holds
+synthetic inputs and ``widget/`` holds viewer input collections. Each contains one folder
+or file per dataset. An Arina acquisition keeps its master + ``_data_*.h5``
 chunk siblings together inside its folder, so ``download`` returns a directory
-``discover_masters`` can read. ``download`` takes a flat name and finds its bucket.
+``quantem.gpu.io.load`` can read. ``download`` accepts a qualified path or a unique
+flat name. Tutorials reuse these inputs instead of copying them per viewer.
 
 The verbs are plain English for a microscopist audience: ``upload``, ``download``,
 ``list_datasets``, ``delete``, ``status``. ``huggingface_hub`` is imported lazily
@@ -31,13 +32,20 @@ DEFAULT_REPO = "bobleesj/quantem-data"
 # The only buckets that hold shareable DATASETS. Other top-level folders in the repo
 # (e.g. `notebooks/` for Colab demos) are not data and must not show up in list / status
 # / tree / browse as if they were downloadable acquisitions.
-DATA_BUCKETS = ("4dstem", "haadf")
+DATA_BUCKETS = ("4dstem", "haadf", "denoise", "widget")
+DATA_SUFFIXES = {
+    ".h5", ".hdf5", ".qem", ".emd", ".npy", ".npz", ".tif", ".tiff",
+    ".mrc", ".mrcs", ".dm3", ".dm4", ".raw", ".bin", ".png", ".jpg",
+    ".jpeg",
+}
 
 # A dataset's calibration travels as a YAML sidecar (humans browsing the repo read clean YAML,
 # not JSON braces). Older datasets used JSON, so read_meta still accepts it; YAML is preferred
 # when both exist. These suffixes/names are NOT datasets themselves - they ride along a dataset.
 SIDECAR_SUFFIXES = (".yaml", ".yml", ".json")
-SIDECAR_BASENAMES = ("meta.yaml", "meta.yml", "quantem_meta.json", "meta.json")  # in-folder, preferred first
+SIDECAR_BASENAMES = (
+    "meta.yaml", "meta.yml", "quantem_meta.json", "meta.json", "metadata.json",
+)
 
 
 def _dump_sidecar(sidecar: dict) -> str:
@@ -267,15 +275,15 @@ def _find_sidecar(files: list[str], name: str) -> str | None:
     A folder dataset keeps it inside (``<name>/meta.yaml``); a single file keeps it as a sibling
     (``<name>.yaml``). Both YAML and the older JSON names are accepted so existing datasets stay
     readable; if a dataset somehow has both, YAML wins."""
-    rank = {".yaml": 0, ".yml": 1, ".json": 2}
-    found = []
-    for f in files:
-        parts = f.split("/")
-        if len(parts) == 3 and parts[1] == name and parts[2] in SIDECAR_BASENAMES:
-            found.append(f)
-        elif len(parts) == 2 and Path(parts[1]).stem == name and Path(parts[1]).suffix.lower() in SIDECAR_SUFFIXES:
-            found.append(f)
-    return min(found, key=lambda f: rank.get(Path(f).suffix.lower(), 9)) if found else None
+    try:
+        target, kind = find_dataset(files, name)
+    except FileNotFoundError:
+        return None
+    if kind == "dir":
+        candidates = [f"{target}/{basename}" for basename in SIDECAR_BASENAMES]
+    else:
+        candidates = [str(Path(target).with_suffix(suffix)) for suffix in SIDECAR_SUFFIXES]
+    return next((candidate for candidate in candidates if candidate in files), None)
 
 
 def dataset_entry(parts: list[str]) -> tuple[str, str, Literal["dir", "file"]] | None:
@@ -284,33 +292,38 @@ def dataset_entry(parts: list[str]) -> tuple[str, str, Literal["dir", "file"]] |
     The single source of truth for "what counts as a shared dataset" - ``list_datasets``,
     ``status`` and ``find_dataset`` all defer to it, so they can never disagree about which
     paths are datasets or what their names are. A path qualifies only if it sits in a data
-    bucket and is not a placeholder, and is then either a folder (a multi-file acquisition) or
-    a lone data file (a ``.json`` sidecar never counts on its own).
+    bucket, is not a placeholder, and contains a recognized data file.
+    Documentation, source code and metadata alone do not declare a dataset.
 
     ``display_key`` is ``<bucket>/<flat-name>`` (what users see; a single file's extension is
     stripped). ``repo_path`` is the actual thing download/delete act on - the folder, or the
     data file WITH its extension. ``kind`` is ``"dir"`` or ``"file"``."""
-    if len(parts) < 2 or parts[0] not in DATA_BUCKETS or parts[1].startswith("placeholder_"):
+    if (len(parts) < 2 or parts[0] not in DATA_BUCKETS
+            or parts[1].startswith("placeholder_")):
         return None
-    if len(parts) >= 3:  # any file under <bucket>/<name>/ marks that folder a dataset
+    suffix = Path(parts[-1]).suffix.lower()
+    # A widget monitor is numerical input, even without a detector acquisition.
+    if suffix not in DATA_SUFFIXES and not (parts[0] == "widget" and suffix == ".jsonl"):
+        return None
+    if len(parts) >= 3:  # a payload under <bucket>/<name>/ declares the dataset
         key = f"{parts[0]}/{parts[1]}"
         return key, key, "dir"
-    if Path(parts[1]).suffix.lower() not in SIDECAR_SUFFIXES:  # a lone data file; its sidecar is not its own dataset
-        return f"{parts[0]}/{Path(parts[1]).stem}", f"{parts[0]}/{parts[1]}", "file"
-    return None
+    return f"{parts[0]}/{Path(parts[1]).stem}", f"{parts[0]}/{parts[1]}", "file"
 
 
 def find_dataset(files: list[str], name: str) -> tuple[str, Literal["dir", "file"]]:
-    """Resolve a flat dataset name to its ``(repo_path, kind)``.
+    """Resolve a qualified or unique flat name to its ``(repo_path, kind)``.
 
     Resolving by flat name is what lets a user say ``"gold_512"`` without knowing its bucket.
     Raises ``FileNotFoundError`` if nothing matches, ``ValueError`` if the name is ambiguous
     across buckets - so download and delete can never silently hit the wrong one. Pure (no
-    network): the resolution rules are unit-tested against a plain list of paths."""
+    network): the resolution rules are unit-tested against a plain list of paths.
+    Use ``haadf/gold`` (or ``haadf/gold.tif``) when a flat name is ambiguous.
+    """
     found: dict[str, Literal["dir", "file"]] = {}  # repo_path -> kind
     for f in files:
         entry = dataset_entry(f.split("/"))
-        if entry and entry[0].split("/", 1)[1] == name:  # flat name = display_key minus its bucket
+        if entry and name in (entry[0], entry[1], entry[0].split("/", 1)[1]):
             found[entry[1]] = entry[2]
     if not found:
         raise FileNotFoundError(
@@ -318,8 +331,8 @@ def find_dataset(files: list[str], name: str) -> tuple[str, Literal["dir", "file
             "(or `quantem-data list`) to see available names.")
     if len(found) > 1:
         raise ValueError(
-            f"{name!r} is ambiguous: {sorted(found)}. Rename one, or pass repo= "
-            "to a repo where it is unique.")
+            f"{name!r} is ambiguous: {sorted(found)}. Pass a qualified dataset "
+            "path from this list.")
     return next(iter(found.items()))
 
 
@@ -410,8 +423,8 @@ class _DatasetCatalog:
     """Notebook-friendly dataset summary returned by ``datasets()``.
 
     This is deliberately a lightweight view over ``status()``: no data files are
-    downloaded, and each row shows the flat name a microscopist can pass to
-    ``load(...)``.
+    downloaded, and each row shows how to load one acquisition or download a
+    widget collection for a viewer.
     """
 
     def __init__(self, rows: list[dict], repo_id: str):
@@ -437,13 +450,14 @@ class _DatasetCatalog:
             f"<td><code>{esc(row['name'])}</code></td>"
             f"<td>{esc(row['modality'])}</td>"
             f"<td style=\"text-align:right\">{row['size_mb']:.1f} MB</td>"
-            f"<td><code>qdata.load(&quot;{esc(row['name'])}&quot;)</code></td>"
+            f"<td><code>qdata.{'download' if row['modality'] in ('widget', 'denoise') else 'load'}"
+            f"(&quot;{esc(row['name'])}&quot;)</code></td>"
             "</tr>"
             for row in self.rows
         )
         return (
             '<table style="border-collapse:collapse">'
-            "<thead><tr><th>Name</th><th>Data</th><th>Size</th><th>Load</th></tr></thead>"
+            "<thead><tr><th>Name</th><th>Data</th><th>Size</th><th>Use</th></tr></thead>"
             f"<tbody>{body}</tbody></table>"
         )
 
@@ -455,14 +469,15 @@ class _DatasetCatalog:
             "modality": max(len("data"), *(len(row["modality"]) for row in self.rows)),
         }
         lines = [
-            f"{'name':<{widths['name']}}  {'data':<{widths['modality']}}  size      load",
+            f"{'name':<{widths['name']}}  {'data':<{widths['modality']}}  size      use",
             f"{'-' * widths['name']}  {'-' * widths['modality']}  --------  ------------------------",
         ]
         for row in self.rows:
+            verb = "download" if row["modality"] in ("widget", "denoise") else "load"
             lines.append(
                 f"{row['name']:<{widths['name']}}  "
                 f"{row['modality']:<{widths['modality']}}  "
-                f"{row['size_mb']:>7.1f} MB  qdata.load({row['name']!r})"
+                f"{row['size_mb']:>7.1f} MB  qdata.{verb}({row['name']!r})"
             )
         return "\n".join(lines)
 
@@ -471,7 +486,7 @@ def datasets(*, repo: str | None = None, modality: str | None = None) -> _Datase
     """Return a notebook-friendly catalog of available public datasets.
 
     Unlike ``list_datasets()``, this is meant for humans reading a notebook: it
-    shows the flat name to load, the data type, size, and the exact load call.
+    shows the name, data type, size, and call (download for workflow collections).
     It never downloads the actual data.
 
     Parameters
@@ -488,13 +503,14 @@ def datasets(*, repo: str | None = None, modality: str | None = None) -> _Datase
     ...              ...    ...       qdata.load('...')
     """
     snap = status(repo=repo)
+    names = Counter(item["name"].split("/", 1)[1] for item in snap["datasets"])
     rows = []
     for item in snap["datasets"]:
         bucket, short = item["name"].split("/", 1)
         if modality is not None and bucket != modality:
             continue
         rows.append({
-            "name": short,
+            "name": short if names[short] == 1 else item["name"],
             "modality": bucket,
             "size_mb": item["size_mb"],
         })
@@ -521,7 +537,9 @@ def delete(name: str, *, repo: str | None = None) -> list[str]:
         bucket = target_rel.split("/", 1)[0]
         for f in files:  # the data file AND its .json calibration sidecar (same stem) go together
             parts = f.split("/")
-            if len(parts) == 2 and parts[0] == bucket and Path(parts[1]).stem == name:
+            if (f == target_rel or (len(parts) == 2 and parts[0] == bucket
+                    and Path(parts[1]).stem == Path(target_rel).stem
+                    and Path(parts[1]).suffix.lower() in SIDECAR_SUFFIXES)):
                 hf.delete_file(path_in_repo=f, repo_id=repo_id, repo_type="dataset")
                 deleted.append(f)
     return deleted
@@ -552,11 +570,19 @@ def status(*, repo: str | None = None) -> dict:
             user = None  # stale/invalid token -> treat as download-only
     sizes: Counter[str] = Counter()
     counts: Counter[str] = Counter()
-    for entry in api.list_repo_tree(repo_id, repo_type="dataset", recursive=True):
+    entries = list(api.list_repo_tree(repo_id, repo_type="dataset", recursive=True))
+    folders = {
+        record[1] for entry in entries if getattr(entry, "size", None) is not None
+        and (record := dataset_entry(entry.path.split("/"))) and record[2] == "dir"
+    }
+    for entry in entries:
         size = getattr(entry, "size", None)
         if size is None:
             continue  # folder entry, not a file
         classified = dataset_entry(entry.path.split("/"))
+        folder = "/".join(entry.path.split("/")[:2])
+        if folder in folders:
+            classified = (folder, folder, "dir")
         if classified is None:
             continue  # not a dataset file (wrong bucket, placeholder, or a top-level sidecar)
         key = classified[0]
@@ -662,7 +688,7 @@ def _card_html(d: dict, repo_id: str) -> str:
     return (f'<div style="display:inline-block;margin:6px;text-align:center;font-family:sans-serif">'
             f'{img}<div style="font-weight:600;font-size:13px;margin-top:4px">{short}</div>'
             f'<div style="font-size:11px;color:#666">{bucket} · {d["size_mb"]/1000:.2f} GB</div>'
-            f'<div style="font-size:10px;color:#999">download("{short}")</div></div>')
+            f'<div style="font-size:10px;color:#999">download("{full}")</div></div>')
 
 
 class _Gallery:
