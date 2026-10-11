@@ -25,8 +25,10 @@ read_meta("gold_512_npy_bin4")  # calibration: voltage, sampling, units, ...
 `load` uses `quantem.widget` for images and `quantem.gpu.io.load` for native
 4D-STEM acquisitions. Install the corresponding optional package. CUDA/MPS
 acquisitions retain encoded storage and native detector geometry; read bounded
-regions from each returned acquisition and close it when finished. Master-file
-folders return a list of independent acquisitions.
+regions from each returned acquisition and close it when finished. On CUDA and
+MPS a master-file folder returns a list of independent acquisitions; with
+`backend="cpu"` the loader stacks them into one dataset unless `stack=False`
+is passed.
 Want only the file path? Use `download(name)`.
 
 ## Reuse inputs across tutorials

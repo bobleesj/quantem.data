@@ -10,7 +10,7 @@ Shared acquisitions live under ``4dstem/`` and ``haadf/``; ``denoise/`` holds
 synthetic inputs and ``widget/`` holds viewer input collections. Each contains one folder
 or file per dataset. An Arina acquisition keeps its master + ``_data_*.h5``
 chunk siblings together inside its folder, so ``download`` returns a directory
-``quantem.gpu.io.load`` can read. ``download`` accepts a qualified path or a unique
+whose master ``quantem.gpu.io.load`` can read. ``download`` accepts a qualified path or a unique
 flat name. Tutorials reuse these inputs instead of copying them per viewer.
 
 The verbs are plain English for a microscopist audience: ``upload``, ``download``,
@@ -389,7 +389,7 @@ def download(
     The collaborator names just the dataset (``"gold_512"``); ``find_dataset`` searches
     every bucket to find where it lives, so they never need to know it is under
     ``4dstem/`` or ``haadf/``. Returns a directory for a multi-file acquisition
-    (ready for ``quantem.gpu.io.load``) or the file path for a single-file
+    (pass its master file to ``quantem.gpu.io.load``) or the file path for a single-file
     dataset. Public repos need no token. A qualified name, such as
     ``denoise/simulated_au_nanobeam_pg_dose1``, selects the bucket explicitly.
     ``revision`` accepts a commit or tag and applies to both the listing and
@@ -890,8 +890,10 @@ def load(
     retain the loader's encoded storage and native detector geometry. Extra
     keyword arguments pass to that loader, such as ``backend="cuda"`` or
     ``hot_pixel_correction="none"``. Read bounded regions from the returned
-    acquisition and close it when finished. A master-file folder returns a list
-    of independent acquisitions; close each one. Both optional packages are
+    acquisition and close it when finished. On CUDA and MPS a master-file folder
+    returns a list of independent acquisitions; close each one. With
+    ``backend="cpu"`` the loader stacks them into one dataset unless
+    ``stack=False`` is passed. Both optional packages are
     imported only for their respective input type; download alone needs neither.
     ``revision`` pins the downloaded input and metadata together and is not
     forwarded to either loader. Set ``verbose=False`` to suppress the transfer
