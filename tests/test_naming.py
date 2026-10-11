@@ -55,6 +55,22 @@ def test_placeholder_is_skipped():
         find_dataset(["4dstem/placeholder_gold/keep.txt"], "placeholder_gold")
 
 
+def test_placeholder_holding_a_data_file_is_still_skipped():
+    with pytest.raises(FileNotFoundError):
+        find_dataset(["4dstem/placeholder_gold/data.npy"], "placeholder_gold")
+
+
+def test_monitor_log_declares_a_dataset_only_under_widget():
+    assert find_dataset(["widget/run/monitor.jsonl"], "run") == ("widget/run", "dir")
+    with pytest.raises(FileNotFoundError):
+        find_dataset(["4dstem/run/monitor.jsonl"], "run")
+
+
+def test_folder_name_with_dots_keeps_its_full_name():
+    files = ["4dstem/gold_30mrad1.3mx04/gold_master.h5"]
+    assert find_dataset(files, "gold_30mrad1.3mx04") == ("4dstem/gold_30mrad1.3mx04", "dir")
+
+
 def test_yaml_sidecar_is_not_a_rival_dataset():
     files = ["haadf/gold.tif", "haadf/gold.yaml"]  # the YAML sidecar must be ignored
     assert find_dataset(files, "gold") == ("haadf/gold.tif", "file")
