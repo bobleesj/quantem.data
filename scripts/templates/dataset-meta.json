@@ -1,0 +1,19 @@
+{
+  "name": "<public dataset name>",
+  "source": "<public-facing microscope, facility, and acquisition description>",
+  "date": "<YYYY-MM-DD>",
+  "sample": "<sample description>",
+  "shape": [512, 512, 48, 48],
+  "dtype": "uint16",
+  "permission": {
+    "received": true,
+    "from": ["<person who granted permission>"],
+    "collectors": ["<data collector>"],
+    "date": "<YYYY-MM-DD>"
+  },
+  "sampling": [0.5, 0.5, 1.84, 1.84],
+  "units": ["A", "A", "mrad", "mrad"],
+  "voltage_kV": 300,
+  "semiangle_mrad": 30,
+  "camera_length_mm": 91
+}
