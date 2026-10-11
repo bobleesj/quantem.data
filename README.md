@@ -34,7 +34,7 @@ Want only the file path? Use `download(name)`.
 One input dataset can serve several algorithms and viewers. Shared acquisitions
 stay under `4dstem/` and `haadf/`, synthetic denoising inputs under `denoise/`,
 and viewer input collections under `widget/`. Tutorial code belongs in its software
-repository; Hugging Face holds data, descriptive metadata and checksums only.
+repository; Hugging Face holds data, data cards, descriptive metadata and checksums only.
 
 Use a qualified dataset name and an immutable revision in tutorial input
 specifications. Unique flat names remain supported for interactive use:
@@ -51,15 +51,21 @@ master = folder / "truth-events-dose-1.0_master.h5"
 
 `download` returns the existing dataset folder with its companion files.
 Pass `master` to `quantem.gpu.io.load` for accelerated acquisition loading,
-then use the loaded data with the algorithm or widget. TV and SHINE reuse the
-same synthetic expectation; noisy observations and training results are made
-locally. No viewer-specific copy or upload is needed. Use the same `revision`
-with `read_meta` to retrieve matching metadata. This API is a development
-change; use this checkout until a release includes it.
+then use the loaded data with the algorithm or widget. Several tutorials can
+reuse this synthetic expectation; noisy observations and training results are
+made locally. No viewer-specific copy or upload is needed. Use the same
+`revision` with `read_meta` to retrieve matching metadata.
+
+Qualified names, `revision`, `cache_dir` and `force_download` are newer than
+the 0.0.1rc4 release on TestPyPI, which also has no `load`. Until a release
+includes them, install from this repository:
+
+```bash
+python -m pip install git+https://github.com/bobleesj/quantem.data.git
+```
 
 `widget/ducky` is a synthetic reconstruction monitor with snapshot companions;
-`widget/gold_session` is an image session. These collections are available at
-the verified R1 revision:
+`widget/gold_session` is an image session. This revision contains both:
 
 ```python
 folder = download(
@@ -68,9 +74,15 @@ folder = download(
 )
 ```
 
-Open them through the matching `quantem.widget.datasets` tutorial helpers.
-Existing public paths remain for older clients. The unchanged denoising input
-above still uses R0; use R1 for the new `widget/` paths.
+`load` does not open these collections; it raises a `ValueError` that names
+`quantem.widget.datasets`. quantem.widget 0.0.1rc41 requests
+`widget-tutorials/` paths; the `widget/` paths need a later quantem.widget.
+
+A revision fixes every path. The `widget/` paths are absent from revision
+`475260be22b5a00704f58382517a44aff94e252e`, used for the denoising input above.
+The earlier `widget-tutorials/` and `survey/` paths are absent from the default
+branch and present in both revisions named here. Do not combine files from two
+revisions in one input.
 
 `download(..., cache_dir="./hf-cache")` keeps the Hub's revision-specific cache.
 Repeated calls reuse cached files but may still check the network. Use
