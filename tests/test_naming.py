@@ -36,6 +36,14 @@ def test_same_name_in_two_buckets_is_ambiguous():
         find_dataset(files, "gold")
 
 
+def test_folder_and_file_with_one_name_are_both_reachable():
+    files = ["haadf/gold/data.npy", "haadf/gold.tif"]
+    with pytest.raises(ValueError):
+        find_dataset(files, "gold")  # the flat name cannot choose between them
+    assert find_dataset(files, "haadf/gold") == ("haadf/gold", "dir")  # an exact repo path wins
+    assert find_dataset(files, "haadf/gold.tif") == ("haadf/gold.tif", "file")
+
+
 def test_non_data_bucket_is_not_a_dataset():
     # `notebooks/` holds Colab demos, not datasets - it must never resolve as one
     with pytest.raises(FileNotFoundError):

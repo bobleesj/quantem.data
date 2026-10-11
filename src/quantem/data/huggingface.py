@@ -370,6 +370,8 @@ def find_dataset(files: list[str], name: str) -> tuple[str, Literal["dir", "file
         raise FileNotFoundError(
             f"{name!r} not found. Call quantem.data.list_datasets() "
             "(or `quantem-data list`) to see available names.")
+    if name in found:  # a folder and a file can share a display key; the exact repo path still names one
+        return name, found[name]
     if len(found) > 1:
         raise ValueError(
             f"{name!r} is ambiguous: {sorted(found)}. Pass a qualified dataset "
