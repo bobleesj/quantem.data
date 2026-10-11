@@ -891,7 +891,7 @@ def load(
     >>> ds.array.shape
     (2048, 2048)
     """
-    path = Path(download(name, repo=repo, out=out, verbose=verbose, revision=revision))
+    path = download(name, repo=repo, out=out, verbose=verbose, revision=revision)
     if path.is_dir() and path.parent.name == "widget":
         raise ValueError(
             f"{name!r} is a widget input collection, not one acquisition. "
