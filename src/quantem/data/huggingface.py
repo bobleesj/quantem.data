@@ -594,7 +594,7 @@ def datasets(*, repo: str | None = None, modality: str | None = None) -> _Datase
     Examples
     --------
     >>> datasets(modality="haadf")
-    name             data   size      load
+    name             data   size      use
     ...              ...    ...       qdata.load('...')
     """
     snap = status(repo=repo)
