@@ -13,8 +13,6 @@ Required: name, source, date, sample, shape, dtype, permission
 Optional: sampling, units, and optics keys.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re
