@@ -24,7 +24,7 @@ import os
 import time
 import warnings
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 DEFAULT_REPO = "bobleesj/quantem-data"
@@ -313,8 +313,18 @@ def _find_sidecar(files: list[str], name: str) -> str | None:
     if kind == "dir":
         candidates = [f"{target}/{basename}" for basename in SIDECAR_BASENAMES]
     else:
-        candidates = [str(Path(target).with_suffix(suffix)) for suffix in SIDECAR_SUFFIXES]
+        candidates = _sibling_sidecars(target)
     return next((candidate for candidate in candidates if candidate in files), None)
+
+
+def _sibling_sidecars(repo_path: str) -> list[str]:
+    """Sidecar paths a single-file dataset may have, preferred first.
+
+    ``haadf/gold.tif`` gives ``haadf/gold.yaml``, ``haadf/gold.yml``, ``haadf/gold.json``.
+    Repo paths always use ``/``. ``PurePosixPath`` keeps that on Windows, where ``Path``
+    answers ``haadf\\gold.yaml``; that matches nothing in a repo listing, so the
+    calibration would be neither found nor downloaded."""
+    return [str(PurePosixPath(repo_path).with_suffix(suffix)) for suffix in SIDECAR_SUFFIXES]
 
 
 def dataset_entry(parts: list[str]) -> tuple[str, str, Literal["dir", "file"]] | None:
@@ -437,7 +447,7 @@ def download(
         selected = [path for path in files if path.startswith(f"{target_rel}/")]
         patterns = f"{target_rel}/*"
     else:
-        sidecars = {str(Path(target_rel).with_suffix(suffix)) for suffix in SIDECAR_SUFFIXES}
+        sidecars = _sibling_sidecars(target_rel)
         selected = [path for path in files if path == target_rel or path in sidecars]
         patterns = selected if len(selected) > 1 else target_rel
     if verbose:

@@ -2,8 +2,11 @@
 
 These rules decide where download/delete act, so they are the highest-value thing to pin:
 a wrong resolution means pulling or deleting the wrong dataset. Pure function, plain lists."""
+from pathlib import PureWindowsPath
+
 import pytest
 
+from quantem.data import huggingface
 from quantem.data.huggingface import _find_sidecar, find_dataset, parse_sidecar
 
 
@@ -57,6 +60,13 @@ def test_find_sidecar_prefers_yaml_over_legacy_json():
 def test_find_sidecar_still_reads_legacy_json():
     files = ["4dstem/gold/master.h5", "4dstem/gold/meta.json"]  # old dataset, JSON only
     assert _find_sidecar(files, "gold") == "4dstem/gold/meta.json"
+
+
+def test_find_sidecar_keeps_forward_slashes_on_windows(monkeypatch):
+    # repo paths always use "/"; a Windows path object would answer haadf\gold.yaml and match nothing
+    monkeypatch.setattr(huggingface, "Path", PureWindowsPath)
+    files = ["haadf/gold.tif", "haadf/gold.yaml"]
+    assert _find_sidecar(files, "haadf/gold") == "haadf/gold.yaml"
 
 
 def test_parse_sidecar_reads_yaml_and_json(tmp_path):
