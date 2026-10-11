@@ -796,7 +796,7 @@ class _Gallery:
 
     def _repr_html_(self) -> str:
         parts = [f'<div style="font-family:sans-serif"><b>{self._snap["repo"]}</b> '
-                 f'— {self._snap["total_mb"]/1000:.1f} GB, {len(self._snap["datasets"])} datasets']
+                 f'- {self._snap["total_mb"]/1000:.1f} GB, {len(self._snap["datasets"])} datasets']
         for bucket in sorted(self._groups):
             items = sorted(self._groups[bucket], key=lambda d: d["name"])
             parts.append(f'<h4 style="margin:12px 0 0">{bucket}/ '
