@@ -19,7 +19,7 @@ from quantem.data import browse, load, read_meta
 
 browse()                        # thumbnail gallery in Jupyter, tree in a terminal
 ds = load("gold_drift_0deg")    # download, then return the data ready to use
-read_meta("gold_512")           # calibration: voltage, semiangle, FOV, ...
+read_meta("gold_512_npy_bin4")  # calibration: voltage, sampling, units, ...
 ```
 
 `load` uses `quantem.widget` for images and `quantem.gpu.io.load` for native
@@ -96,7 +96,7 @@ rehash cached scientific files or establish their calibration.
 ```bash
 quantem-data list                          # every shared dataset name
 quantem-data tree                          # grouped by bucket, with sizes
-quantem-data meta gold_512                 # calibration sidecar
+quantem-data meta gold_512_npy_bin4        # calibration sidecar
 quantem-data download gold_512 --out ./d   # pull one dataset
 quantem-data list --revision 475260be22b5a00704f58382517a44aff94e252e
 ```
