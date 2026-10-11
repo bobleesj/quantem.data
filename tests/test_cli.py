@@ -101,3 +101,25 @@ def test_upload_command_aborts_on_no_confirmation(monkeypatch, tmp_path):
     _answers(monkeypatch, ["300", "Sangjoon Bob Lee", "Colin", "gold", "2026-06-25", "", "", "n"])  # decline
     assert cli.main(["upload", str(img)]) == 1
     assert captured == {}  # upload never called
+
+
+def test_pinned_download_and_metadata_commands(monkeypatch, tmp_path, capsys):
+    calls = []
+
+    def download(name, **kwargs):
+        calls.append((name, kwargs))
+        return tmp_path / "widget/ducky"
+
+    monkeypatch.setattr(cli, "download", download)
+    assert cli.main([
+        "download", "widget/ducky", "--revision", "input-commit",
+        "--cache-dir", str(tmp_path), "--force-download",
+    ]) == 0
+    assert calls == [("widget/ducky", {
+        "repo": None, "out": None, "revision": "input-commit",
+        "cache_dir": str(tmp_path), "force_download": True,
+    })]
+    monkeypatch.setattr(cli, "read_meta", lambda name, **kwargs: calls.append((name, kwargs)))
+    assert cli.main(["meta", "widget/ducky", "--revision", "input-commit"]) == 0
+    assert calls[-1] == ("widget/ducky", {"repo": None, "revision": "input-commit"})
+    capsys.readouterr()

@@ -248,12 +248,39 @@ def _upload_meta(hf, repo_id: str, folder: str, name: str,
         os.unlink(tmp)
 
 
-def read_meta(name: str, *, repo: str | None = None) -> dict | None:
+def read_meta(
+    name: str, *, repo: str | None = None, revision: str | None = None,
+    cache_dir: str | Path | None = None,
+) -> dict | None:
     """Return a dataset's calibration sidecar, or ``None`` if it has none.
 
     The counterpart to ``upload(..., meta=...)``: a collaborator who downloads a
     4D-STEM acquisition gets back the scan sampling / FOV / voltage / semiangle the
-    raw detector master cannot carry. Public repos need no token.
+    raw detector master cannot carry. Public repos need no token. A qualified
+    name selects the bucket explicitly; ``revision`` selects the same commit
+    used when downloading the dataset.
+
+    Parameters
+    ----------
+    name : str
+        Qualified dataset ID or unique short name.
+    repo : str, optional
+        Dataset repository; defaults to ``bobleesj/quantem-data``.
+    revision : str, optional
+        Commit or tag to read. Use the download's immutable commit for matching
+        calibration. Omit to read the default branch.
+    cache_dir : str or pathlib.Path, optional
+        Hugging Face cache root, matching ``download(cache_dir=...)``.
+
+    Returns
+    -------
+    dict or None
+        Parsed metadata, or ``None`` if no matching dataset sidecar exists.
+
+    Raises
+    ------
+    ValueError
+        If a short name matches multiple datasets; use a qualified ID.
 
     Examples
     --------
@@ -262,10 +289,14 @@ def read_meta(name: str, *, repo: str | None = None) -> dict | None:
     """
     hf = _hf()
     repo_id = _resolve_repo(repo)
-    target = _find_sidecar(hf.list_repo_files(repo_id=repo_id, repo_type="dataset"), name)
+    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset", revision=revision)
+    target = _find_sidecar(files, name)
     if target is None:
         return None
-    local = hf.hf_hub_download(repo_id=repo_id, repo_type="dataset", filename=target)
+    local = hf.hf_hub_download(
+        repo_id=repo_id, repo_type="dataset", filename=target, revision=revision,
+        cache_dir=cache_dir,
+    )
     return parse_sidecar(local)
 
 
@@ -336,20 +367,61 @@ def find_dataset(files: list[str], name: str) -> tuple[str, Literal["dir", "file
     return next(iter(found.items()))
 
 
-def download(name: str, *, repo: str | None = None, out: str | Path | None = None,
-             verbose: bool = True) -> Path:
-    """Download one shared dataset by flat name and return its local path.
+def download(
+    name: str, *, repo: str | None = None, out: str | Path | None = None,
+    verbose: bool = True, revision: str | None = None,
+    cache_dir: str | Path | None = None, force_download: bool = False,
+) -> Path:
+    """Download one shared dataset by name and return its local path.
 
     The collaborator names just the dataset (``"gold_512"``); ``find_dataset`` searches
     every bucket to find where it lives, so they never need to know it is under
     ``4dstem/`` or ``haadf/``. Returns a directory for a multi-file acquisition
-    (ready for ``discover_masters`` / ``load``) or the file path for a single-file
-    dataset. Public repos need no token.
+    (ready for ``quantem.gpu.io.load``) or the file path for a single-file
+    dataset. Public repos need no token. A qualified name, such as
+    ``denoise/simulated_au_nanobeam_pg_dose1``, selects the bucket explicitly.
+    ``revision`` accepts a commit or tag and applies to both the listing and
+    download. Use an immutable commit for reproducible tutorials.
 
-    ``verbose`` (default) frames Hugging Face's own per-file byte progress bars
-    with a clear "downloading from the internet" header and a size/speed summary,
-    so the user can tell the wait is the network, not our code. A second call on
-    the same dataset is a local cache hit and prints "(already downloaded)".
+    Only this dataset and its companions are fetched. Hugging Face reuses cached
+    files for the selected revision; a repeat call may still check the network.
+    Its normal transfer checks apply. This function checks that all selected
+    files exist, but does not rehash an existing cache or validate scientific
+    calibration. Use a new cache or ``force_download=True`` to replace damaged
+    cached files. ``verbose`` frames the Hub's per-file progress with a summary.
+
+    Parameters
+    ----------
+    name : str
+        Qualified dataset ID or unique short name.
+    repo : str, optional
+        Dataset repository; defaults to ``bobleesj/quantem-data``.
+    out : str or pathlib.Path, optional
+        Optional export directory. It preserves repository-relative paths but
+        does not isolate revisions; use a separate directory for each revision.
+    verbose : bool, optional
+        Whether to print progress and a local-path summary.
+    revision : str, optional
+        Commit or tag for both listing and transfer. An immutable commit pins
+        the input; ``None`` uses the repository's default branch.
+    cache_dir : str or pathlib.Path, optional
+        Hugging Face cache root. Cached snapshots isolate repository revisions.
+        The Hub uses ``out`` instead when an export directory is supplied.
+    force_download : bool, optional
+        Fetch selected files again, even when present in the cache.
+
+    Returns
+    -------
+    pathlib.Path
+        Dataset directory or single payload file. Metadata and companions are
+        retained next to their payloads.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the dataset is absent or the completed snapshot is missing a file.
+    ValueError
+        If a short name is ambiguous. Pass one of the listed qualified IDs.
 
     Examples
     --------
@@ -359,12 +431,19 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
     """
     hf = _hf()
     repo_id = _resolve_repo(repo)
-    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
+    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset", revision=revision)
     target_rel, kind = find_dataset(files, name)
-    pattern = f"{target_rel}/*" if kind == "dir" else target_rel
+    if kind == "dir":
+        selected = [path for path in files if path.startswith(f"{target_rel}/")]
+        patterns = f"{target_rel}/*"
+    else:
+        sidecars = {str(Path(target_rel).with_suffix(suffix)) for suffix in SIDECAR_SUFFIXES}
+        selected = [path for path in files if path == target_rel or path in sidecars]
+        patterns = selected if len(selected) > 1 else target_rel
     if verbose:
-        print(f"Downloading '{name}' from Hugging Face ({repo_id}) over the internet - "
-              "speed depends on your connection, not your computer ...", flush=True)
+        print(f"Fetching '{name}' from Hugging Face ({repo_id}, "
+              f"revision={revision or 'default branch'}); reusing cached files "
+              "when available ...", flush=True)
     t0 = time.perf_counter()
     was_disabled = False
     if not verbose:
@@ -383,30 +462,46 @@ def download(name: str, *, repo: str | None = None, out: str | Path | None = Non
     try:
         root = hf.snapshot_download(
             repo_id=repo_id, repo_type="dataset",
-            allow_patterns=pattern,
+            allow_patterns=patterns,
             local_dir=str(out) if out is not None else None,
+            revision=revision,
+            cache_dir=cache_dir,
+            force_download=force_download,
         )
     finally:
         if enable_progress_bars is not None and not was_disabled:
             enable_progress_bars()
     result = Path(root) / target_rel
+    missing = [path for path in selected if not (Path(root) / path).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"Incomplete download of {name!r} at revision {revision!r}: "
+            f"missing {missing}. Retry with force_download=True or a new cache_dir."
+        )
     if verbose:
         dt = time.perf_counter() - t0
-        gb = (sum(f.stat().st_size for f in result.rglob("*") if f.is_file())
-              if result.is_dir() else result.stat().st_size) / 1e9
-        if dt < 1.0:
-            print(f"'{name}' ({gb:.2f} GB) is already cached on disk - no re-download.\n"
-                  f"  cached at: {result}", flush=True)
-        else:
-            print(f"Downloaded '{name}' ({gb:.2f} GB) in {dt:.0f}s "
-                  f"({gb * 1000 / dt:.0f} MB/s from Hugging Face).\n"
-                  f"  cached on disk - future loads are instant, no re-download.\n"
-                  f"  cached at: {result}", flush=True)
+        gb = sum((Path(root) / path).stat().st_size for path in selected) / 1e9
+        print(f"Ready: '{name}' ({gb:.2f} GB, {dt:.1f}s).\n"
+              f"  local path: {result}", flush=True)
     return result
 
 
-def list_datasets(*, repo: str | None = None) -> list[str]:
+def list_datasets(
+    *, repo: str | None = None, revision: str | None = None,
+) -> list[str]:
     """List shared datasets as ``<bucket>/<name>`` (skips placeholders/docs).
+
+    Parameters
+    ----------
+    repo : str, optional
+        Dataset repository; defaults to ``bobleesj/quantem-data``.
+    revision : str, optional
+        Commit or tag to list. Omit for the default branch.
+
+    Returns
+    -------
+    list[str]
+        Sorted qualified IDs with a recognized payload in the selected revision.
 
     Examples
     --------
@@ -415,7 +510,7 @@ def list_datasets(*, repo: str | None = None) -> list[str]:
     """
     hf = _hf()
     repo_id = _resolve_repo(repo)
-    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset")
+    files = hf.list_repo_files(repo_id=repo_id, repo_type="dataset", revision=revision)
     return sorted({e[0] for f in files if (e := dataset_entry(f.split("/")))})
 
 

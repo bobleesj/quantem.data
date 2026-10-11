@@ -70,20 +70,25 @@ def main(argv: list[str] | None = None) -> int:
                         help="Override the dataset repo (else $QUANTEM_DATA_REPO, else the default).")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("list", help="List every shared dataset name (flat, one per line).")
+    p_list = sub.add_parser("list", help="List qualified dataset names, one per line.")
+    p_list.add_argument("--revision", default=None, help="Dataset repository commit or tag.")
     sub.add_parser("tree", help="Datasets grouped by bucket (data type) with sizes - the structure at a glance.")
     sub.add_parser("status", help="Repo summary: datasets, file counts, sizes.")
 
     p_meta = sub.add_parser("meta", help="Print a dataset's calibration sidecar (or 'no metadata').")
-    p_meta.add_argument("name", help="Dataset name (flat, e.g. gold_512).")
+    p_meta.add_argument("name", help="Qualified dataset path or unique flat name.")
+    p_meta.add_argument("--revision", default=None, help="Dataset repository commit or tag.")
 
     p_tmpl = sub.add_parser("template", help="Print an example calibration sidecar to fill in and pass to --meta.")
     p_tmpl.add_argument("modality", nargs="?", default="4dstem", choices=sorted(_PROMPT_FIELDS),
                         help="Which schema (default: 4dstem).")
 
-    p_dl = sub.add_parser("download", help="Download one dataset by flat name.")
-    p_dl.add_argument("name", help="Dataset name (flat, e.g. gold_512).")
+    p_dl = sub.add_parser("download", help="Download one shared dataset.")
+    p_dl.add_argument("name", help="Qualified dataset path or unique flat name.")
+    p_dl.add_argument("--revision", default=None, help="Dataset repository commit or tag.")
     p_dl.add_argument("--out", default=None, help="Directory to download into (default: HF cache).")
+    p_dl.add_argument("--cache-dir", default=None, help="Hugging Face cache root.")
+    p_dl.add_argument("--force-download", action="store_true", help="Fetch selected files again.")
 
     p_up = sub.add_parser("upload", help="Upload a file or folder (needs an HF write token).")
     p_up.add_argument("path", help="Local file or folder to upload.")
@@ -106,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace) -> int:
     """Route a parsed command to the matching ``quantem.data`` verb."""
     if args.command == "list":
-        names = list_datasets(repo=args.repo)
+        names = list_datasets(repo=args.repo, revision=args.revision)
         print("\n".join(names) if names else "(no datasets)")
         return 0
     if args.command == "tree":
@@ -119,7 +124,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             print(f"  {d['size_mb']:>10.1f} MB  {d['files']:>3} files  {d['name']}")
         return 0
     if args.command == "meta":
-        meta = read_meta(args.name, repo=args.repo)
+        meta = read_meta(args.name, repo=args.repo, revision=args.revision)
         if not meta:
             print(f"{args.name!r}: no metadata")
         else:
@@ -131,7 +136,10 @@ def _dispatch(args: argparse.Namespace) -> int:
         print(yaml.safe_dump(_template_meta(args.modality), sort_keys=False).rstrip())
         return 0
     if args.command == "download":
-        path = download(args.name, repo=args.repo, out=args.out)
+        path = download(
+            args.name, repo=args.repo, out=args.out, revision=args.revision,
+            cache_dir=args.cache_dir, force_download=args.force_download,
+        )
         print(path)
         return 0
     if args.command == "upload":

@@ -4,6 +4,7 @@ OUR code calls it with the right repo paths: download builds the right allow-pat
 writes the data plus its sidecar, delete removes the data AND its .json, status aggregates
 sizes only over real datasets. monkeypatch swaps ``_hf()`` for the fake."""
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,18 +31,34 @@ class _FakeApi:
 
 class _FakeHub:
     """Records every call OUR code makes, returns canned values, touches no network."""
-    def __init__(self, files=(), tree=(), cache="/no/such/cache"):
+    def __init__(self, files=(), tree=(), cache="/no/such/cache", root=None):
         self._files = list(files)
         self._tree = list(tree)
         self.calls = []
+        self.root = root
         self.constants = SimpleNamespace(HF_HUB_CACHE=cache)
         self.errors = SimpleNamespace(HfHubHTTPError=Exception, EntryNotFoundError=Exception)
 
-    def list_repo_files(self, repo_id, repo_type="dataset"):
+    def list_repo_files(self, repo_id, repo_type="dataset", revision=None):
+        self.calls.append(("list_repo_files", revision))
         return self._files
-    def snapshot_download(self, repo_id, repo_type="dataset", allow_patterns=None, local_dir=None):
+    def snapshot_download(
+        self, repo_id, repo_type="dataset", allow_patterns=None, local_dir=None,
+        revision=None, cache_dir=None, force_download=False,
+    ):
+        self.calls.append(("snapshot_revision", revision))
         self.calls.append(("snapshot_download", allow_patterns, local_dir))
-        return "/fake/root"
+        self.calls.append(("cache", cache_dir, force_download))
+        patterns = [allow_patterns] if isinstance(allow_patterns, str) else allow_patterns
+        root = Path(local_dir or self.root)
+        for filename in self._files:
+            if any(fnmatch(filename, pattern) for pattern in patterns):
+                path = root / filename
+                if force_download or not path.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"input")
+                    self.calls.append(("transfer", filename))
+        return root
     def upload_file(self, path_or_fileobj=None, path_in_repo=None, repo_id=None, repo_type=None):
         self.calls.append(("upload_file", path_in_repo))
         return "https://hf/commit"
@@ -69,18 +86,20 @@ def _uploaded(hub):
 
 # --- download -------------------------------------------------------------------
 
-def test_download_folder_dataset_globs_the_directory(monkeypatch):
-    hub = _install(monkeypatch, _FakeHub(files=["4dstem/gold/master.h5", "4dstem/gold/data.h5"]))
+def test_download_folder_dataset_globs_the_directory(monkeypatch, tmp_path):
+    hub = _install(monkeypatch, _FakeHub(
+        files=["4dstem/gold/master.h5", "4dstem/gold/data.h5"], root=tmp_path,
+    ))
     path = hg.download("gold", verbose=False)
     assert ("snapshot_download", "4dstem/gold/*", None) in hub.calls
-    assert path == Path("/fake/root/4dstem/gold")
+    assert path == tmp_path / "4dstem/gold"
 
 
-def test_download_single_file_fetches_just_that_file(monkeypatch):
-    hub = _install(monkeypatch, _FakeHub(files=["haadf/gold.tif"]))
+def test_download_single_file_fetches_just_that_file(monkeypatch, tmp_path):
+    hub = _install(monkeypatch, _FakeHub(files=["haadf/gold.tif"], root=tmp_path))
     path = hg.download("gold", verbose=False)
     assert ("snapshot_download", "haadf/gold.tif", None) in hub.calls
-    assert path == Path("/fake/root/haadf/gold.tif")
+    assert path == tmp_path / "haadf/gold.tif"
 
 
 # --- upload ---------------------------------------------------------------------
@@ -216,6 +235,28 @@ def test_datasets_returns_human_friendly_load_table(monkeypatch):
     assert "haadf/silver" not in text
 
 
+def test_tutorial_download_and_metadata_use_the_same_revision(monkeypatch, tmp_path):
+    prefix = "denoise/simulated_au_nanobeam_pg_dose1"
+    hub = _install(monkeypatch, _FakeHub(root=tmp_path / "cache", files=[
+        f"{prefix}/truth_master.h5", f"{prefix}/meta.json",
+    ]))
+    metadata = tmp_path / "meta.json"
+    metadata.write_text('{"signal_units": "events"}')
+
+    def fetch_metadata(**kwargs):
+        hub.calls.append(("metadata", kwargs["filename"], kwargs["revision"]))
+        return metadata
+
+    hub.hf_hub_download = fetch_metadata
+    revision = "475260be22b5a00704f58382517a44aff94e252e"
+    path = hg.download(prefix, revision=revision, verbose=False)
+    assert path == tmp_path / "cache" / prefix
+    assert hg.read_meta(prefix, revision=revision) == {"signal_units": "events"}
+    assert ("list_repo_files", revision) in hub.calls
+    assert ("snapshot_revision", revision) in hub.calls
+    assert ("metadata", f"{prefix}/meta.json", revision) in hub.calls
+
+
 def test_discovery_includes_workflows_without_listing_code(monkeypatch):
     tree = [
         _Entry("denoise/gold/truth_master.h5", 1000),
@@ -258,3 +299,42 @@ def test_qualified_selection_keeps_the_right_metadata_and_delete_target(monkeypa
         hg._find_sidecar(files, "gold")
     assert hg.delete("haadf/gold") == ["haadf/gold.tif", "haadf/gold.yaml"]
     assert not any("4dstem" in call[1] for call in hub.calls if call[0].startswith("delete"))
+
+
+def test_pinned_widget_collection_reuses_cache_and_keeps_all_companions(monkeypatch, tmp_path):
+    files = [
+        "widget/ducky/show1d_monitor.jsonl", "widget/ducky/metadata.json",
+        "widget/ducky/snapshots/frame.npy", "widget/ducky/snapshots/lambda_0.npy",
+        "widget/other/array.npy", "haadf/ducky.npy",
+    ]
+    hub = _install(monkeypatch, _FakeHub(files=files, root=tmp_path / "cache"))
+    options = dict(revision="pinned-commit", cache_dir=tmp_path / "cache", verbose=False)
+    folder = hg.download("widget/ducky", **options)
+    assert sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()) == [
+        "metadata.json", "show1d_monitor.jsonl", "snapshots/frame.npy", "snapshots/lambda_0.npy",
+    ]
+    first_transfers = [call for call in hub.calls if call[0] == "transfer"]
+    assert len(first_transfers) == 4
+    assert hg.download("widget/ducky", **options) == folder
+    assert [call for call in hub.calls if call[0] == "transfer"] == first_transfers
+    hg.download("widget/ducky", force_download=True, **options)
+    assert len([call for call in hub.calls if call[0] == "transfer"]) == 8
+    assert all(call[1] == "pinned-commit" for call in hub.calls if call[0] in (
+        "list_repo_files", "snapshot_revision",
+    ))
+    assert ("cache", tmp_path / "cache", True) in hub.calls
+    assert not (tmp_path / "cache" / "widget/other").exists()
+
+
+def test_single_image_export_includes_calibration_and_missing_shard_fails(monkeypatch, tmp_path):
+    hub = _install(monkeypatch, _FakeHub(files=[
+        "haadf/gold.tif", "haadf/gold.yaml", "haadf/silver.tif",
+    ]))
+    image = hg.download("haadf/gold", out=tmp_path, revision="old-input", verbose=False)
+    assert image == tmp_path / "haadf/gold.tif"
+    assert image.with_suffix(".yaml").is_file()
+    assert not (tmp_path / "haadf/silver.tif").exists()
+    hub._files = ["4dstem/gold/master.h5", "4dstem/gold/chunk.h5"]
+    monkeypatch.setattr(hub, "snapshot_download", lambda **kwargs: tmp_path)
+    with pytest.raises(FileNotFoundError, match="chunk.h5.*force_download=True"):
+        hg.download("4dstem/gold", revision="old-input", verbose=False)
