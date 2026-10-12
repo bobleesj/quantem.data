@@ -88,10 +88,13 @@ revisions in one input.
 
 `download(..., cache_dir="./hf-cache")` keeps the Hub's revision-specific cache.
 Repeated calls reuse cached files but may still check the network. Use
-`force_download=True` to replace cached copies. `out=` exports the selected
-dataset and metadata under their repository paths; use separate output
-directories for different revisions. Transfer and file-presence checks do not
-rehash cached scientific files or establish their calibration.
+`force_download=True` to replace cached copies. `load` takes the same
+`revision`, `cache_dir` and `force_download` and passes every other keyword to
+the reader; a keyword the reader does not take raises `TypeError`. `out=`
+exports the selected dataset and metadata under their repository paths; use
+separate output directories for different revisions. Transfer and
+file-presence checks do not rehash cached scientific files or establish their
+calibration.
 
 ## Command line
 

@@ -881,6 +881,8 @@ def load(
     out: str | Path | None = None,
     verbose: bool = True,
     revision: str | None = None,
+    cache_dir: str | Path | None = None,
+    force_download: bool = False,
     **kwargs,
 ):
     """Download a dataset AND return it ready to use, in one call.
@@ -897,7 +899,13 @@ def load(
     imported only for their respective input type; download alone needs neither.
     ``revision`` pins the downloaded input and metadata together and is not
     forwarded to either loader. Set ``verbose=False`` to suppress the transfer
-    summary.
+    summary. ``cache_dir`` and ``force_download`` mean what they mean in
+    ``download`` and are never forwarded to a loader; ``cache_dir`` also
+    selects the cache the metadata is read from, so data and calibration come
+    from the cache that was asked for. Every other keyword goes to the loader
+    of the input's type, image reader included. One that loader does not take
+    raises ``TypeError`` after the download; the corrected call reuses the
+    cached files.
 
     Examples
     --------
@@ -905,7 +913,10 @@ def load(
     >>> ds.array.shape
     (2048, 2048)
     """
-    path = download(name, repo=repo, out=out, verbose=verbose, revision=revision)
+    path = download(
+        name, repo=repo, out=out, verbose=verbose, revision=revision,
+        cache_dir=cache_dir, force_download=force_download,
+    )
     if path.is_dir() and path.parent.name == "widget":
         raise ValueError(
             f"{name!r} is a widget input collection, not one acquisition. "
@@ -934,5 +945,6 @@ def load(
             "(download() alone returns the file path without it)."
         ) from exc
     return _apply_image_meta(
-        widget_io.read_image(image_path), read_meta(name, repo=repo, revision=revision),
+        widget_io.read_image(image_path, **kwargs),
+        read_meta(name, repo=repo, revision=revision, cache_dir=cache_dir),
     )

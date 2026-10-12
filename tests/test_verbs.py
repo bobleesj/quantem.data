@@ -31,11 +31,12 @@ class _FakeApi:
 
 class _FakeHub:
     """Records every call OUR code makes, returns canned values, touches no network."""
-    def __init__(self, files=(), tree=(), cache="/no/such/cache", root=None):
+    def __init__(self, files=(), tree=(), cache="/no/such/cache", root=None, sidecar="{}"):
         self._files = list(files)
         self._tree = list(tree)
         self.calls = []
         self.root = root
+        self.sidecar = sidecar
         self.constants = SimpleNamespace(HF_HUB_CACHE=cache)
         self.errors = SimpleNamespace(HfHubHTTPError=Exception, EntryNotFoundError=Exception)
 
@@ -50,7 +51,7 @@ class _FakeHub:
         self.calls.append(("snapshot_download", allow_patterns, local_dir))
         self.calls.append(("cache", cache_dir, force_download))
         patterns = [allow_patterns] if isinstance(allow_patterns, str) else allow_patterns
-        root = Path(local_dir or self.root)
+        root = Path(local_dir or cache_dir or self.root)
         for filename in self._files:
             if any(fnmatch(filename, pattern) for pattern in patterns):
                 path = root / filename
@@ -59,6 +60,12 @@ class _FakeHub:
                     path.write_bytes(b"input")
                     self.calls.append(("transfer", filename))
         return root
+    def hf_hub_download(self, repo_id=None, repo_type=None, filename=None, revision=None, cache_dir=None):
+        self.calls.append(("sidecar", filename, revision, cache_dir))
+        path = Path(cache_dir or self.root) / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.sidecar)
+        return path
     def upload_file(self, path_or_fileobj=None, path_in_repo=None, repo_id=None, repo_type=None):
         self.calls.append(("upload_file", path_in_repo))
         return "https://hf/commit"
@@ -150,8 +157,8 @@ def _fake_widget(monkeypatch):
 def test_load_single_image_goes_through_read_image(monkeypatch, tmp_path):
     img = tmp_path / "gold.tif"
     img.write_bytes(b"x")
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True, revision=None: img)
-    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None, revision=None: None)
+    monkeypatch.setattr(hg, "download", lambda name, **options: img)
+    monkeypatch.setattr(hg, "read_meta", lambda name, **options: None)
     _fake_widget(monkeypatch)
     assert hg.load("gold") == ("image", img)
 
@@ -162,8 +169,8 @@ def test_load_folder_backed_npy_image_goes_through_read_image(monkeypatch, tmp_p
     img = folder / "data.npy"
     img.write_bytes(b"x")
     (folder / "meta.yaml").write_text("pixel_size_nm: 0.018\n")
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True, revision=None: folder)
-    monkeypatch.setattr(hg, "read_meta", lambda name, repo=None, revision=None: None)
+    monkeypatch.setattr(hg, "download", lambda name, **options: folder)
+    monkeypatch.setattr(hg, "read_meta", lambda name, **options: None)
     _fake_widget(monkeypatch)
     assert hg.load("gold_haadf_npy") == ("image", img)
 
@@ -175,11 +182,11 @@ def test_load_image_applies_sidecar_calibration(monkeypatch, tmp_path):
     fake_io = SimpleNamespace(read_image=lambda path: dataset)
     monkeypatch.setitem(sys.modules, "quantem.widget", SimpleNamespace(io=fake_io))
     monkeypatch.setitem(sys.modules, "quantem.widget.io", fake_io)
-    monkeypatch.setattr(hg, "download", lambda name, repo=None, out=None, verbose=True, revision=None: img)
+    monkeypatch.setattr(hg, "download", lambda name, **options: img)
     monkeypatch.setattr(
         hg,
         "read_meta",
-        lambda name, repo=None, revision=None: {"name": "Gold", "sampling": [0.018, 0.018], "units": ["nm", "nm"]},
+        lambda name, **options: {"name": "Gold", "sampling": [0.018, 0.018], "units": ["nm", "nm"]},
     )
     assert hg.load("gold") is dataset
     assert dataset.name == "Gold"
@@ -220,6 +227,32 @@ def test_load_native_missing_gpu_explains_download_alternative(monkeypatch, tmp_
     monkeypatch.setitem(sys.modules, "quantem.gpu", None)
     with pytest.raises(ImportError, match="pip install quantem.gpu.*download"):
         hg.load("4dstem/gold")
+
+
+@pytest.mark.parametrize("name, files, sidecars_read", [
+    ("haadf/gold", ["haadf/gold.tif", "haadf/gold.yaml"], ["haadf/gold.yaml"]),
+    ("4dstem/gold_512", ["4dstem/gold_512/data.npy", "4dstem/gold_512/meta.yaml"], []),
+])
+def test_load_keeps_download_options_and_refuses_unknown_keywords(
+    monkeypatch, tmp_path, name, files, sidecars_read,
+):
+    hub = _install(monkeypatch, _FakeHub(files=files, root=tmp_path / "default"))
+    _fake_widget(monkeypatch)
+    # the real 4D-STEM loader has a closed signature too: no cache_dir, no force_download
+    gpu_io = SimpleNamespace(load=lambda source, *, backend="auto": ("resident", source))
+    monkeypatch.setitem(sys.modules, "quantem.gpu", SimpleNamespace(io=gpu_io))
+    chosen = tmp_path / "chosen"
+    _, source = hg.load(
+        name, revision="input-commit", cache_dir=chosen, force_download=True, verbose=False,
+    )
+    assert source.is_relative_to(chosen)
+    assert not (tmp_path / "default").exists()
+    assert ("cache", chosen, True) in hub.calls
+    assert [call[1:] for call in hub.calls if call[0] == "sidecar"] == [
+        (path, "input-commit", chosen) for path in sidecars_read
+    ]
+    with pytest.raises(TypeError, match="not_an_argument"):
+        hg.load(name, not_an_argument=123, verbose=False)
 
 
 # --- status ---------------------------------------------------------------------
