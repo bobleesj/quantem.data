@@ -882,20 +882,17 @@ def _image_payload(path: Path) -> Path | None:
 
 
 def _apply_image_meta(dataset, meta: dict | None):
-    """Attach sidecar calibration to an image dataset when the object supports it."""
+    """Attach sidecar calibration to an image dataset when the object supports it.
+
+    A value the object refuses raises the object's own error. Swallowing it would hand back
+    an image without its sampling that looks exactly like a calibrated one."""
     if not meta:
         return dataset
     for attr in ("name", "sampling", "units", "signal_units"):
         if attr in meta and hasattr(dataset, attr):
-            try:
-                setattr(dataset, attr, meta[attr])
-            except (AttributeError, TypeError):
-                pass
+            setattr(dataset, attr, meta[attr])
     if hasattr(dataset, "metadata"):
-        try:
-            dataset.metadata.update(meta)
-        except (AttributeError, TypeError):
-            pass
+        dataset.metadata.update(meta)
     return dataset
 
 

@@ -202,6 +202,30 @@ def test_load_image_applies_sidecar_calibration(monkeypatch, tmp_path):
     assert dataset.metadata["name"] == "Gold"
 
 
+def test_load_image_raises_when_the_dataset_rejects_a_sidecar_value(monkeypatch, tmp_path):
+    class Image:
+        """Stands in for the core image dataset, whose sampling setter validates."""
+        def __init__(self):
+            self.name, self.metadata, self._sampling = "raw", {}, [1.0, 1.0]
+        @property
+        def sampling(self):
+            return self._sampling
+        @sampling.setter
+        def sampling(self, value):
+            if not isinstance(value, list):
+                raise TypeError(f"sampling must be a list, got {value!r}")
+            self._sampling = value
+
+    _install(monkeypatch, _FakeHub(
+        files=["haadf/gold.tif", "haadf/gold.yaml"], root=tmp_path, sidecar="sampling: 0.018 nm\n",
+    ))
+    fake_io = SimpleNamespace(read_image=lambda path: Image())
+    monkeypatch.setitem(sys.modules, "quantem.widget", SimpleNamespace(io=fake_io))
+    monkeypatch.setitem(sys.modules, "quantem.widget.io", fake_io)
+    with pytest.raises(TypeError, match="sampling must be a list, got '0.018 nm'"):
+        hg.load("haadf/gold", verbose=False)  # used to return the image with sampling [1.0, 1.0]
+
+
 @pytest.mark.parametrize("payload", ["masters", "data.npy", "scan.h5"])
 def test_load_native_4dstem_uses_gpu_io_without_widget(monkeypatch, tmp_path, payload):
     folder = tmp_path / "4dstem" / "gold_512"
