@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from quantem.data import cli
 from quantem.data import huggingface as hg
 
 
@@ -31,8 +32,9 @@ class _FakeApi:
 
 class _FakeHub:
     """Records every call OUR code makes, returns canned values, touches no network."""
-    def __init__(self, files=(), tree=(), cache="/no/such/cache", root=None, sidecar="{}"):
+    def __init__(self, files=(), tree=(), cache="/no/such/cache", root=None, sidecar="{}", revisions=None):
         self._files = list(files)
+        self._revisions = revisions or {}  # revision -> the files that revision holds, when they differ
         self._tree = list(tree)
         self.calls = []
         self.root = root
@@ -42,7 +44,7 @@ class _FakeHub:
 
     def list_repo_files(self, repo_id, repo_type="dataset", revision=None):
         self.calls.append(("list_repo_files", revision))
-        return self._files
+        return self._revisions.get(revision, self._files)
     def snapshot_download(
         self, repo_id, repo_type="dataset", allow_patterns=None, local_dir=None,
         revision=None, cache_dir=None, force_download=False,
@@ -308,6 +310,23 @@ def test_tutorial_download_and_metadata_use_the_same_revision(monkeypatch, tmp_p
     assert ("list_repo_files", revision) in hub.calls
     assert ("snapshot_revision", revision) in hub.calls
     assert ("metadata", f"{prefix}/meta.json", revision) in hub.calls
+
+
+def test_metadata_of_an_unlisted_dataset_raises_instead_of_reporting_none(monkeypatch, tmp_path, capsys):
+    _install(monkeypatch, _FakeHub(
+        root=tmp_path, files=["haadf/gold.tif", "widget/ducky/show1d_monitor.jsonl"],
+        revisions={"older-layout": ["haadf/gold.tif"]},
+    ))
+    assert hg.read_meta("haadf/gold") is None  # listed, no sidecar: the only case that answers None
+    with pytest.raises(FileNotFoundError, match="'no_such_dataset' not found"):
+        hg.read_meta("no_such_dataset")
+    assert hg.read_meta("widget/ducky") is None
+    with pytest.raises(FileNotFoundError, match="'widget/ducky' not found"):
+        hg.read_meta("widget/ducky", revision="older-layout")
+    assert cli.main(["meta", "widget/ducky", "--revision", "older-layout"]) == 1
+    printed = capsys.readouterr()
+    assert "'widget/ducky' not found" in printed.err
+    assert "no metadata" not in printed.out
 
 
 def test_discovery_includes_workflows_without_listing_code(monkeypatch):

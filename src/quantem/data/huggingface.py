@@ -275,10 +275,12 @@ def read_meta(
     Returns
     -------
     dict or None
-        Parsed metadata, or ``None`` if no matching dataset sidecar exists.
+        Parsed metadata, or ``None`` if the dataset exists and has no sidecar.
 
     Raises
     ------
+    FileNotFoundError
+        If the dataset is not listed in the repository at this revision.
     ValueError
         If a short name matches multiple datasets; use a qualified ID.
 
@@ -305,11 +307,11 @@ def _find_sidecar(files: list[str], name: str) -> str | None:
 
     A folder dataset keeps it inside (``<name>/meta.yaml``); a single file keeps it as a sibling
     (``<name>.yaml``). Both YAML and the older JSON names are accepted so existing datasets stay
-    readable; if a dataset somehow has both, YAML wins."""
-    try:
-        target, kind = find_dataset(files, name)
-    except FileNotFoundError:
-        return None
+    readable; if a dataset somehow has both, YAML wins. ``None`` means the dataset is listed and
+    carries no sidecar. A name that is not listed raises ``find_dataset``'s ``FileNotFoundError``:
+    answering ``None`` there would report a mistyped name, or one absent at this revision, as
+    a dataset without calibration."""
+    target, kind = find_dataset(files, name)
     if kind == "dir":
         candidates = [f"{target}/{basename}" for basename in SIDECAR_BASENAMES]
     else:
