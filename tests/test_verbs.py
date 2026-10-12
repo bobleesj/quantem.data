@@ -135,6 +135,20 @@ def test_upload_file_without_meta_writes_only_data(monkeypatch, tmp_path):
     assert _uploaded(hub) == ["haadf/gold.tif"]  # no sidecar when there is no metadata
 
 
+@pytest.mark.parametrize("filename, sidecar", [
+    # a dot inside the name is not an extension: this one was stored as "...01.7Mx gold overview 01.emd"
+    ("0021 - HAADF 3.7Mx gold overview 01.emd", "0021 - HAADF 3.7Mx gold overview 01.yaml"),
+    ("gold overview 01.emd", "gold overview 01.yaml"),
+    ("gold_overview", "gold_overview.yaml"),  # no dot at all
+])
+def test_upload_without_a_name_keeps_the_file_name(monkeypatch, tmp_path, filename, sidecar):
+    hub = _install(monkeypatch, _FakeHub())
+    src = tmp_path / filename
+    src.write_bytes(b"x")
+    hg.upload(src, meta={"voltage_kV": 300})
+    assert _uploaded(hub) == [f"haadf/{filename}", f"haadf/{sidecar}"]
+
+
 # --- delete ---------------------------------------------------------------------
 
 def test_delete_folder_dataset_removes_the_folder(monkeypatch):

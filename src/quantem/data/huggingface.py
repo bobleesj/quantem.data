@@ -133,9 +133,10 @@ def upload(path: str | Path, name: str | None = None, *,
             repo_id=repo_id, repo_type="dataset",
         )
     else:
-        suffix = "".join(src.suffixes)  # keep multi-part extensions like .nii.gz
+        # the default name is the stem, which drops the last suffix only; every dot before it
+        # belongs to the name ("3.7Mx"), and dataset_entry reads the listing the same way
         info = hf.upload_file(
-            path_or_fileobj=str(src), path_in_repo=f"{folder}/{name}{suffix}",
+            path_or_fileobj=str(src), path_in_repo=f"{folder}/{name}{src.suffix}",
             repo_id=repo_id, repo_type="dataset",
         )
     sidecar = _build_meta(src, meta)

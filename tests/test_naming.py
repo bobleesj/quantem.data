@@ -71,6 +71,13 @@ def test_folder_name_with_dots_keeps_its_full_name():
     assert find_dataset(files, "gold_30mrad1.3mx04") == ("4dstem/gold_30mrad1.3mx04", "dir")
 
 
+def test_file_name_with_dots_keeps_its_full_name_and_sidecar():
+    files = ["haadf/0021 - HAADF 3.7Mx gold overview 01.emd", "haadf/0021 - HAADF 3.7Mx gold overview 01.yaml"]
+    name = "0021 - HAADF 3.7Mx gold overview 01"  # only the last suffix is the extension
+    assert find_dataset(files, name) == (files[0], "file")
+    assert _find_sidecar(files, name) == files[1]
+
+
 def test_yaml_sidecar_is_not_a_rival_dataset():
     files = ["haadf/gold.tif", "haadf/gold.yaml"]  # the YAML sidecar must be ignored
     assert find_dataset(files, "gold") == ("haadf/gold.tif", "file")
