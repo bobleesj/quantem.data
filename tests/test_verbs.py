@@ -374,7 +374,7 @@ def test_tutorial_download_and_metadata_use_the_same_revision(monkeypatch, tmp_p
         return metadata
 
     hub.hf_hub_download = fetch_metadata
-    revision = "475260be22b5a00704f58382517a44aff94e252e"
+    revision = "5925e4b49b2ca28ff82d6d5a6b9a8bfea9edfb20"
     path = hg.download(prefix, revision=revision, verbose=False)
     assert path == tmp_path / "cache" / prefix
     assert hg.read_meta(prefix, revision=revision) == {"signal_units": "events"}

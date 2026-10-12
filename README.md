@@ -33,10 +33,13 @@ Want only the file path? Use `download(name)`.
 
 ## Reuse inputs across tutorials
 
-One input dataset can serve several algorithms and viewers. Shared acquisitions
-stay under `4dstem/` and `haadf/`, synthetic denoising inputs under `denoise/`,
-and viewer input collections under `widget/`. Tutorial code belongs in its software
-repository; Hugging Face holds data, data cards, descriptive metadata and checksums only.
+One input dataset can serve several algorithms and viewers. The current layout
+has four data folders: shared acquisitions under `4dstem/` and `haadf/`,
+synthetic denoising inputs under `denoise/`, and viewer input collections under
+`widget/`. Revision `5925e4b49b2ca28ff82d6d5a6b9a8bfea9edfb20` holds this
+layout, and quantem.widget pins it for its tutorial inputs; pin the same one
+in a new tutorial. Tutorial code belongs in its software repository; Hugging
+Face holds data, data cards, descriptive metadata and checksums only.
 
 Use a qualified dataset name and an immutable revision in tutorial input
 specifications. Unique flat names remain supported for interactive use:
@@ -44,10 +47,8 @@ specifications. Unique flat names remain supported for interactive use:
 ```python
 from quantem.data import download
 
-folder = download(
-    "denoise/simulated_au_nanobeam_pg_dose1",
-    revision="475260be22b5a00704f58382517a44aff94e252e",
-)
+DATA_REVISION = "5925e4b49b2ca28ff82d6d5a6b9a8bfea9edfb20"
+folder = download("denoise/simulated_au_nanobeam_pg_dose1", revision=DATA_REVISION)
 master = folder / "truth-events-dose-1.0_master.h5"
 ```
 
@@ -70,24 +71,17 @@ python -m pip install git+https://github.com/bobleesj/quantem.data.git
 ```
 
 `widget/ducky` is a synthetic reconstruction monitor with snapshot companions;
-`widget/gold_session` is an image session. This revision contains both:
+`widget/gold_session` is an image session. The same revision contains both:
 
 ```python
-folder = download(
-    "widget/ducky",
-    revision="b30a28c295494b51139415d540819c4cbfde49b6",
-)
+folder = download("widget/ducky", revision=DATA_REVISION)
 ```
 
 `load` does not open these collections; it raises a `ValueError` that names
-`quantem.widget.datasets`. quantem.widget 0.0.1rc41 requests
-`widget-tutorials/` paths; the `widget/` paths need a later quantem.widget.
+`quantem.widget.datasets`.
 
-A revision fixes every path. The `widget/` paths are absent from revision
-`475260be22b5a00704f58382517a44aff94e252e`, used for the denoising input above.
-The earlier `widget-tutorials/` and `survey/` paths are absent from the default
-branch and present in both revisions named here. Do not combine files from two
-revisions in one input.
+A revision fixes every path. Do not combine files from two revisions in one
+input.
 
 `download(..., cache_dir="./hf-cache")` keeps the Hub's revision-specific cache.
 Repeated calls reuse cached files but may still check the network. Use
@@ -99,6 +93,21 @@ separate output directories for different revisions. Transfer and
 file-presence checks do not rehash cached scientific files or establish their
 calibration.
 
+### Older layout
+
+Two older revisions hold an earlier layout that still has `survey/` and
+`widget-tutorials/` folders, which the current revision does not have:
+
+- `475260be22b5a00704f58382517a44aff94e252e` has no `widget/` folder.
+- `b30a28c295494b51139415d540819c4cbfde49b6` has `widget/` next to the two
+  older folders. The saved outputs of `notebooks/shared_datasets_tutorial.ipynb`
+  were produced at this revision.
+
+quantem.widget 0.0.1rc41 requests `widget-tutorials/` paths; the `widget/`
+paths need a later quantem.widget. `quantem.data` lists and downloads the four
+current folders at any revision; a `survey/` or `widget-tutorials/` path is
+not a dataset to it.
+
 ## Command line
 
 ```bash
@@ -106,7 +115,7 @@ quantem-data list                          # every shared dataset name
 quantem-data tree                          # grouped by bucket, with sizes
 quantem-data meta gold_512_npy_bin4        # calibration sidecar
 quantem-data download gold_512 --out ./d   # pull one dataset
-quantem-data list --revision 475260be22b5a00704f58382517a44aff94e252e
+quantem-data list --revision 5925e4b49b2ca28ff82d6d5a6b9a8bfea9edfb20   # or: tree / status
 ```
 
 ## Publish (owner)
