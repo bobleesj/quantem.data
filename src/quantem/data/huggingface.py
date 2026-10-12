@@ -20,6 +20,7 @@ install dependency so a single ``pip install`` gives both the loader and this pa
 """
 from __future__ import annotations
 
+import html
 import os
 import time
 import warnings
@@ -536,9 +537,10 @@ class _DatasetCatalog:
     widget collection for a viewer.
     """
 
-    def __init__(self, rows: list[dict], repo_id: str):
+    def __init__(self, rows: list[dict], repo_id: str, revision: str | None = None):
         self.rows = rows
         self.repo_id = repo_id
+        self.revision = revision
 
     def __iter__(self):
         return iter(self.rows)
@@ -551,16 +553,17 @@ class _DatasetCatalog:
 
     def _repr_html_(self) -> str:
         def esc(value) -> str:
-            import html  # noqa: PLC0415
             return html.escape(str(value))
 
+        # a call copied from a pinned listing must read the revision that was listed
+        pin = f", revision=&quot;{esc(self.revision)}&quot;" if self.revision else ""
         body = "".join(
             "<tr>"
             f"<td><code>{esc(row['name'])}</code></td>"
             f"<td>{esc(row['modality'])}</td>"
             f"<td style=\"text-align:right\">{row['size_mb']:.1f} MB</td>"
             f"<td><code>qdata.{'download' if row['modality'] in ('widget', 'denoise') else 'load'}"
-            f"(&quot;{esc(row['name'])}&quot;)</code></td>"
+            f"(&quot;{esc(row['name'])}&quot;{pin})</code></td>"
             "</tr>"
             for row in self.rows
         )
@@ -581,17 +584,20 @@ class _DatasetCatalog:
             f"{'name':<{widths['name']}}  {'data':<{widths['modality']}}  size      use",
             f"{'-' * widths['name']}  {'-' * widths['modality']}  --------  ------------------------",
         ]
+        pin = f", revision={self.revision!r}" if self.revision else ""
         for row in self.rows:
             verb = "download" if row["modality"] in ("widget", "denoise") else "load"
             lines.append(
                 f"{row['name']:<{widths['name']}}  "
                 f"{row['modality']:<{widths['modality']}}  "
-                f"{row['size_mb']:>7.1f} MB  qdata.{verb}({row['name']!r})"
+                f"{row['size_mb']:>7.1f} MB  qdata.{verb}({row['name']!r}{pin})"
             )
         return "\n".join(lines)
 
 
-def datasets(*, repo: str | None = None, modality: str | None = None) -> _DatasetCatalog:
+def datasets(
+    *, repo: str | None = None, modality: str | None = None, revision: str | None = None,
+) -> _DatasetCatalog:
     """Return a notebook-friendly catalog of available public datasets.
 
     Unlike ``list_datasets()``, this is meant for humans reading a notebook: it
@@ -604,6 +610,9 @@ def datasets(*, repo: str | None = None, modality: str | None = None) -> _Datase
         Hugging Face dataset repo. Defaults to ``bobleesj/quantem-data``.
     modality
         Optional bucket filter such as ``"haadf"`` or ``"4dstem"``.
+    revision
+        Commit or tag to list, as in ``list_datasets(revision=...)``. Omit for the
+        default branch. When given, the printed calls carry it.
 
     Examples
     --------
@@ -611,7 +620,7 @@ def datasets(*, repo: str | None = None, modality: str | None = None) -> _Datase
     name             data   size      use
     ...              ...    ...       qdata.load('...')
     """
-    snap = status(repo=repo)
+    snap = status(repo=repo, revision=revision)
     names = Counter(item["name"].split("/", 1)[1] for item in snap["datasets"])
     rows = []
     for item in snap["datasets"]:
@@ -623,7 +632,7 @@ def datasets(*, repo: str | None = None, modality: str | None = None) -> _Datase
             "modality": bucket,
             "size_mb": item["size_mb"],
         })
-    return _DatasetCatalog(rows, snap["repo"])
+    return _DatasetCatalog(rows, snap["repo"], revision)
 
 
 def delete(name: str, *, repo: str | None = None) -> list[str]:
@@ -654,12 +663,14 @@ def delete(name: str, *, repo: str | None = None) -> list[str]:
     return deleted
 
 
-def status(*, repo: str | None = None) -> dict:
+def status(*, repo: str | None = None, revision: str | None = None) -> dict:
     """Snapshot of the shared repo: auth, datasets + sizes, and local cache size.
 
     Answers the operator's "where does my data live, can I upload, what is shared,
     what do I already have locally" in one call. No token needed for the dataset
     listing; auth is reported as whoever is logged in (or ``None`` = download-only).
+    ``revision`` is the commit or tag to list, as in ``list_datasets(revision=...)``;
+    omit it for the default branch. The local cache size covers every revision.
 
     Examples
     --------
@@ -679,7 +690,9 @@ def status(*, repo: str | None = None) -> dict:
             user = None  # stale/invalid token -> treat as download-only
     sizes: Counter[str] = Counter()
     counts: Counter[str] = Counter()
-    entries = list(api.list_repo_tree(repo_id, repo_type="dataset", recursive=True))
+    entries = list(api.list_repo_tree(
+        repo_id, repo_type="dataset", recursive=True, revision=revision,
+    ))
     folders = {
         record[1] for entry in entries if getattr(entry, "size", None) is not None
         and (record := dataset_entry(entry.path.split("/"))) and record[2] == "dir"
@@ -714,18 +727,20 @@ def status(*, repo: str | None = None) -> dict:
 
 # --- discovery: structure + visual browse (look before a multi-GB download) ---
 
-def _by_bucket(repo: str | None = None) -> tuple[dict, dict]:
+def _by_bucket(repo: str | None = None, revision: str | None = None) -> tuple[dict, dict]:
     """``status()`` datasets grouped by bucket (top-level data type). Returns (groups, snapshot)."""
-    snap = status(repo=repo)
+    snap = status(repo=repo, revision=revision)
     groups: dict[str, list[dict]] = {}
     for d in snap["datasets"]:
         groups.setdefault(d["name"].split("/", 1)[0], []).append(d)
     return groups, snap
 
 
-def tree(*, repo: str | None = None) -> None:
+def tree(*, repo: str | None = None, revision: str | None = None) -> None:
     """Print the shared repo grouped by bucket (data type) with sizes: the folder structure
     at a glance, so a user can pick a dataset without opening Hugging Face in a browser.
+    ``revision`` is the commit or tag to list, as in ``list_datasets(revision=...)``; omit it
+    for the default branch.
 
     Examples
     --------
@@ -733,12 +748,12 @@ def tree(*, repo: str | None = None) -> None:
     bobleesj/quantem-data  (12.3 GB total, 8 datasets)
     ...
     """
-    print(_tree_text(repo=repo))
+    print(_tree_text(repo=repo, revision=revision))
 
 
-def _tree_text(*, repo: str | None = None) -> str:
+def _tree_text(*, repo: str | None = None, revision: str | None = None) -> str:
     """The dataset tree as text, shared by ``tree()`` and ``browse().__repr__()``."""
-    groups, snap = _by_bucket(repo=repo)
+    groups, snap = _by_bucket(repo=repo, revision=revision)
     lines = [f"{snap['repo']}  ({snap['total_mb'] / 1000:.1f} GB total, {len(snap['datasets'])} datasets)"]
     for bucket in sorted(groups):
         items = sorted(groups[bucket], key=lambda d: d["name"])
@@ -754,9 +769,11 @@ THUMB_DIR = ".thumbnails"  # top-level tree, OUTSIDE the data buckets, so a thum
 # datasets ambiguous with their data file in `download`).
 
 
-def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
+def _thumb_data_uri(full_name: str, repo_id: str, revision: str | None = None) -> str | None:
     """Fetch only ``.thumbnails/<bucket>/<name>.png`` (KB, not the data) and return it as a
-    base64 data URI for inline display, or None if the dataset has no thumbnail yet."""
+    base64 data URI for inline display, or None if the dataset has no thumbnail yet. The
+    thumbnail is read at the listed ``revision`` so a pinned gallery never shows a picture
+    from another revision next to that revision's names."""
     import base64  # noqa: PLC0415
     hf = _hf()
     was_disabled = False
@@ -775,6 +792,7 @@ def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
             repo_id=repo_id,
             repo_type="dataset",
             filename=f"{THUMB_DIR}/{full_name}.png",
+            revision=revision,
         )
     except (hf.errors.EntryNotFoundError, hf.errors.HfHubHTTPError):
         return None  # no thumbnail uploaded for this dataset yet
@@ -785,11 +803,13 @@ def _thumb_data_uri(full_name: str, repo_id: str) -> str | None:
     return f"data:image/png;base64,{b64}"
 
 
-def _card_html(d: dict, repo_id: str) -> str:
-    """One dataset card: thumbnail (or placeholder) + flat name + bucket + size."""
+def _card_html(d: dict, repo_id: str, revision: str | None = None) -> str:
+    """One dataset card: thumbnail (or placeholder) + flat name + bucket + size. The printed
+    ``download(...)`` call carries ``revision`` when the gallery lists one."""
     full = d["name"]
     bucket, short = full.split("/", 1)
-    uri = _thumb_data_uri(full, repo_id)
+    uri = _thumb_data_uri(full, repo_id, revision)
+    pin = f', revision="{html.escape(revision)}"' if revision else ""
     img = (f'<img src="{uri}" style="width:160px;height:160px;object-fit:cover;border-radius:6px">'
            if uri else
            '<div style="width:160px;height:160px;border-radius:6px;background:#eee;display:flex;'
@@ -797,16 +817,17 @@ def _card_html(d: dict, repo_id: str) -> str:
     return (f'<div style="display:inline-block;margin:6px;text-align:center;font-family:sans-serif">'
             f'{img}<div style="font-weight:600;font-size:13px;margin-top:4px">{short}</div>'
             f'<div style="font-size:11px;color:#666">{bucket} · {d["size_mb"]/1000:.2f} GB</div>'
-            f'<div style="font-size:10px;color:#999">download("{full}")</div></div>')
+            f'<div style="font-size:10px;color:#999">download("{full}"{pin})</div></div>')
 
 
 class _Gallery:
     """Renders a thumbnail grid inline in Jupyter (``_repr_html_``); prints the tree in a
     terminal (``__repr__``). Returned by ``browse()`` so the notebook displays it directly."""
 
-    def __init__(self, repo: str | None):
-        self._groups, self._snap = _by_bucket(repo=repo)
+    def __init__(self, repo: str | None, revision: str | None = None):
+        self._groups, self._snap = _by_bucket(repo=repo, revision=revision)
         self._repo_id = _resolve_repo(repo)
+        self._revision = revision
 
     def _repr_html_(self) -> str:
         parts = [f'<div style="font-family:sans-serif"><b>{self._snap["repo"]}</b> '
@@ -815,26 +836,28 @@ class _Gallery:
             items = sorted(self._groups[bucket], key=lambda d: d["name"])
             parts.append(f'<h4 style="margin:12px 0 0">{bucket}/ '
                          f'<span style="font-weight:400;color:#888">({len(items)})</span></h4>')
-            parts.append("".join(_card_html(d, self._repo_id) for d in items))
+            parts.append("".join(_card_html(d, self._repo_id, self._revision) for d in items))
         parts.append("</div>")
         return "".join(parts)
 
     def __repr__(self) -> str:
         repo = self._repo_id if self._repo_id != DEFAULT_REPO else None
-        return _tree_text(repo=repo)
+        return _tree_text(repo=repo, revision=self._revision)
 
 
-def browse(*, repo: str | None = None) -> "_Gallery":
+def browse(*, repo: str | None = None, revision: str | None = None) -> "_Gallery":
     """Visual dataset picker: a grid of thumbnails + names + sizes you can scan before
     downloading anything. In Jupyter it renders inline; in a terminal it prints the tree.
     Thumbnails are tiny (KB) and fetched on the fly - the multi-GB data is never touched.
-    Pick a name and pass it to ``download(...)``.
+    Pick a name and pass it to ``download(...)``. ``revision`` is the commit or tag to list,
+    as in ``list_datasets(revision=...)``; omit it for the default branch. When given, the
+    thumbnails and the printed calls use it too.
 
     Examples
     --------
     >>> browse()   # in Jupyter: a thumbnail grid; in a terminal: the tree
     """
-    return _Gallery(repo)
+    return _Gallery(repo, revision)
 
 
 def _image_payload(path: Path) -> Path | None:

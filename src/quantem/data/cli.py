@@ -72,8 +72,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p_list = sub.add_parser("list", help="List qualified dataset names, one per line.")
     p_list.add_argument("--revision", default=None, help="Dataset repository commit or tag.")
-    sub.add_parser("tree", help="Datasets grouped by bucket (data type) with sizes - the structure at a glance.")
-    sub.add_parser("status", help="Repo summary: datasets, file counts, sizes.")
+    p_tree = sub.add_parser("tree", help="Datasets grouped by bucket (data type) with sizes - the structure at a glance.")
+    p_tree.add_argument("--revision", default=None, help="Dataset repository commit or tag.")
+    p_status = sub.add_parser("status", help="Repo summary: datasets, file counts, sizes.")
+    p_status.add_argument("--revision", default=None, help="Dataset repository commit or tag.")
 
     p_meta = sub.add_parser("meta", help="Print a dataset's calibration sidecar (or 'no metadata').")
     p_meta.add_argument("name", help="Qualified dataset path or unique flat name.")
@@ -115,10 +117,10 @@ def _dispatch(args: argparse.Namespace) -> int:
         print("\n".join(names) if names else "(no datasets)")
         return 0
     if args.command == "tree":
-        tree(repo=args.repo)
+        tree(repo=args.repo, revision=args.revision)
         return 0
     if args.command == "status":
-        s = status(repo=args.repo)
+        s = status(repo=args.repo, revision=args.revision)
         print(f"repo {s['repo']}  |  logged in as {s['logged_in_as']}  |  {s['total_mb']:.0f} MB total")
         for d in s["datasets"]:
             print(f"  {d['size_mb']:>10.1f} MB  {d['files']:>3} files  {d['name']}")

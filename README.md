@@ -56,7 +56,10 @@ Pass `master` to `quantem.gpu.io.load` for accelerated acquisition loading,
 then use the loaded data with the algorithm or widget. Several tutorials can
 reuse this synthetic expectation; noisy observations and training results are
 made locally. No viewer-specific copy or upload is needed. Use the same
-`revision` with `read_meta` to retrieve matching metadata.
+`revision` with `read_meta` to retrieve matching metadata. Every listing takes
+it too: `list_datasets`, `datasets`, `tree`, `browse` and `status`, and
+`--revision` on `quantem-data list`, `tree` and `status`. The calls that
+`datasets` and `browse` print then carry that revision.
 
 Qualified names, `revision`, `cache_dir` and `force_download` are newer than
 the 0.0.1rc4 release on TestPyPI, which also has no `load`. Until a release

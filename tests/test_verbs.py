@@ -22,20 +22,25 @@ class _Entry:
 
 
 class _FakeApi:
-    def __init__(self, tree):
-        self._tree = tree
+    def __init__(self, hub):
+        self._hub = hub
     def whoami(self, token=None):
         return {"name": "tester"}
-    def list_repo_tree(self, repo_id, repo_type="dataset", recursive=True):
-        return self._tree
+    def list_repo_tree(self, repo_id, repo_type="dataset", recursive=True, revision=None):
+        self._hub.calls.append(("list_repo_tree", revision))
+        return self._hub._revision_trees.get(revision, self._hub._tree)
 
 
 class _FakeHub:
     """Records every call OUR code makes, returns canned values, touches no network."""
-    def __init__(self, files=(), tree=(), cache="/no/such/cache", root=None, sidecar="{}", revisions=None):
+    def __init__(
+        self, files=(), tree=(), cache="/no/such/cache", root=None, sidecar="{}",
+        revisions=None, revision_trees=None,
+    ):
         self._files = list(files)
         self._revisions = revisions or {}  # revision -> the files that revision holds, when they differ
         self._tree = list(tree)
+        self._revision_trees = revision_trees or {}  # the same, for the sized tree status() reads
         self.calls = []
         self.root = root
         self.sidecar = sidecar
@@ -63,7 +68,7 @@ class _FakeHub:
                     self.calls.append(("transfer", filename))
         return root
     def hf_hub_download(self, repo_id=None, repo_type=None, filename=None, revision=None, cache_dir=None):
-        self.calls.append(("sidecar", filename, revision, cache_dir))
+        self.calls.append(("fetch", filename, revision, cache_dir))
         path = Path(cache_dir or self.root) / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self.sidecar)
@@ -79,7 +84,7 @@ class _FakeHub:
     def delete_folder(self, path_in_repo=None, repo_id=None, repo_type=None):
         self.calls.append(("delete_folder", path_in_repo))
     def HfApi(self):
-        return _FakeApi(self._tree)
+        return _FakeApi(self)
     def get_token(self):
         return "tok"
 
@@ -250,7 +255,7 @@ def test_load_keeps_download_options_and_refuses_unknown_keywords(
     assert source.is_relative_to(chosen)
     assert not (tmp_path / "default").exists()
     assert ("cache", chosen, True) in hub.calls
-    assert [call[1:] for call in hub.calls if call[0] == "sidecar"] == [
+    assert [call[1:] for call in hub.calls if call[0] == "fetch"] == [
         (path, "input-commit", chosen) for path in sidecars_read
     ]
     with pytest.raises(TypeError, match="not_an_argument"):
@@ -288,6 +293,34 @@ def test_datasets_returns_human_friendly_load_table(monkeypatch):
     text = repr(catalog)
     assert "qdata.load('silver')" in text
     assert "haadf/silver" not in text
+
+
+def test_every_listing_reads_the_revision_it_is_given(monkeypatch, tmp_path, capsys):
+    current = [_Entry("haadf/gold.tif", 3_000_000), _Entry("widget/ducky/show1d_monitor.jsonl", 200)]
+    older = [_Entry("haadf/silver.tif", 2_000_000), _Entry("4dstem/gold/master.h5", 1_000_000)]
+    hub = _install(monkeypatch, _FakeHub(
+        root=tmp_path, tree=current, revision_trees={"older-layout": older},
+    ))
+    snap = hg.status(revision="older-layout")
+    assert [item["name"] for item in snap["datasets"]] == ["4dstem/gold", "haadf/silver"]
+    catalog = hg.datasets(revision="older-layout")
+    assert [row["name"] for row in catalog] == ["gold", "silver"]
+    assert "qdata.load('silver', revision='older-layout')" in repr(catalog)
+    assert "qdata.load(&quot;silver&quot;, revision=&quot;older-layout&quot;)" in catalog._repr_html_()
+    gallery = hg.browse(revision="older-layout")
+    cards = gallery._repr_html_()
+    assert 'download("haadf/silver", revision="older-layout")' in cards
+    assert ("fetch", ".thumbnails/haadf/silver.png", "older-layout", None) in hub.calls
+    hg.tree(revision="older-layout")
+    listings = [capsys.readouterr().out, repr(gallery), cards]
+    for command in ("tree", "status"):
+        assert cli.main([command, "--revision", "older-layout"]) == 0
+        listings.append(capsys.readouterr().out)
+    for listing in listings:
+        assert "silver" in listing and "ducky" not in listing
+    assert {call[1] for call in hub.calls if call[0] == "list_repo_tree"} == {"older-layout"}
+    assert "qdata.load('gold')" in repr(hg.datasets())  # no revision: default branch, bare call
+    assert hub.calls[-1] == ("list_repo_tree", None)
 
 
 def test_tutorial_download_and_metadata_use_the_same_revision(monkeypatch, tmp_path):
