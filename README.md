@@ -131,9 +131,11 @@ python scripts/check_dataset_metadata.py /path/to/new-dataset
 
 This is an opt-in check for new contributions, separate from the calibration
 sidecars read at runtime. It does not retroactively require legacy datasets to
-use this schema. Leave unknown provenance unknown; do not invent permissions,
-dates or calibration to make validation pass. The checker and template live in
-this source checkout, not in the installed runtime or Hugging Face data tree.
+use this schema. A `scan_sampling_A`, when given, must be the `[row, col]` pair
+in angstrom; one number is refused. Leave unknown provenance unknown; do not
+invent permissions, dates or calibration to make validation pass. The checker
+and template live in this source checkout, not in the installed runtime or
+Hugging Face data tree.
 
 From the terminal, just point at the data - `upload` asks for the calibration (with an
 example for each field) and shows you the result before writing:
@@ -163,7 +165,9 @@ operators:
 pi: principal investigator name
 sample: gold nanoparticles
 date: '2026-06-25'
-scan_sampling_A: 0.2
+scan_sampling_A:  # [row, col], angstrom
+  - 0.2
+  - 0.2
 magnification_MX: 1.3
 facility: facility name
 ```

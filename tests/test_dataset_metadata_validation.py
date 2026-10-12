@@ -59,6 +59,15 @@ def test_contributor_gets_permission_and_axis_errors_together(tmp_path, capsys):
     assert path.read_bytes() == original
 
 
+def test_scan_sampling_is_the_row_col_pair(tmp_path):
+    path, meta = _contribution(tmp_path)
+    refused = ["scan_sampling_A must be [row, col], two numbers in angstrom"]
+    for value, problems in (([0.5, 0.5], []), (0.5, refused), ([0.5], refused), ([0.5, True], refused)):
+        meta["scan_sampling_A"] = value
+        path.write_text(json.dumps(meta))
+        assert CHECKER["check_meta"](tmp_path) == problems
+
+
 def test_legacy_calibration_is_read_without_contribution_schema(tmp_path):
     from quantem.data import huggingface
 

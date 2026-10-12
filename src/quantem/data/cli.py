@@ -20,12 +20,22 @@ import sys
 from pathlib import Path
 
 from quantem.data import download, list_datasets, read_meta, status, tree, upload
-from quantem.data.huggingface import auto_meta, parse_sidecar
+from quantem.data.huggingface import DATA_BUCKETS, auto_meta, parse_sidecar
 
 def _names(raw: str) -> list[str]:
     """Comma-separated people -> a list, so a sidecar stores ``operators: [first, second]``
     rather than one run-together string. A single name yields a one-element list."""
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _row_col(raw: str) -> list[float]:
+    """``"0.2, 0.2"`` -> ``[0.2, 0.2]``: the ``[row, col]`` pair the shared vocabulary stores under
+    ``scan_sampling_A``. Anything but two numbers raises ``ValueError``, so the prompt asks again:
+    one number in a sidecar would not say which scan axis it calibrates."""
+    values = [float(part) for part in raw.split(",")]
+    if len(values) != 2:
+        raise ValueError(f"expected two numbers (row, col), got {raw!r}")
+    return values
 
 
 # The calibration a user is asked for at an interactive upload, per modality: (key, example,
@@ -42,7 +52,7 @@ _PROMPT_FIELDS: dict[str, list[tuple[str, object, object, bool]]] = {
         ("pi", "principal investigator name", str, True),
         ("sample", "gold nanoparticles", str, True),
         ("date", "2026-06-25", str, True),
-        ("scan_sampling_A", 0.2, float, False),
+        ("scan_sampling_A", [0.2, 0.2], _row_col, False),
         ("magnification_MX", 1.3, float, False),
         ("facility", "facility name", str, False),
     ],
@@ -95,7 +105,8 @@ def main(argv: list[str] | None = None) -> int:
     p_up = sub.add_parser("upload", help="Upload a file or folder (needs an HF write token).")
     p_up.add_argument("path", help="Local file or folder to upload.")
     p_up.add_argument("--name", default=None, help="Dataset name (default: the file/folder stem).")
-    p_up.add_argument("--folder", default=None, help="Bucket: 4dstem or haadf (default: auto by content).")
+    p_up.add_argument("--folder", default=None,
+                      help=f"Bucket: {', '.join(DATA_BUCKETS)} (default: auto by content).")
     p_up.add_argument("--meta", default=None, help="Path to a YAML or JSON calibration sidecar (skips the prompts).")
     p_up.add_argument("--no-input", action="store_true", help="Don't prompt for calibration (scripts/CI).")
 
@@ -206,7 +217,8 @@ def _prompt_meta(name: str, folder: str, known: dict | None = None) -> dict:
 def _ask(key: str, example: object, cast, required: bool):
     """Prompt for one field, re-asking until the value casts cleanly or is left blank."""
     tag = "required" if required else "optional"
-    shown = ", ".join(example) if isinstance(example, list) else example  # a list example reads as names
+    # a list example reads the way it is typed: names or a row, col pair, comma-separated
+    shown = ", ".join(str(item) for item in example) if isinstance(example, list) else example
     while True:
         raw = input(f"  {key} (e.g. {shown}) [{tag}]: ").strip()
         if not raw:

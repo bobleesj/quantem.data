@@ -5,7 +5,10 @@ import builtins
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from quantem.data import cli
+from quantem.data.huggingface import DATA_BUCKETS
 
 
 def _answers(monkeypatch, values):
@@ -15,8 +18,12 @@ def _answers(monkeypatch, values):
 
 
 def test_prompt_builds_meta_casting_numbers_and_names_and_skipping_blanks(monkeypatch):
-    # 4dstem order: voltage, semiangle, operators, pi, sample, date, scan_sampling, mag, facility
-    _answers(monkeypatch, ["300", "25", "first operator, second operator", "investigator", "gold", "2026-06-25", "0.2", "", ""])
+    # 4dstem order: voltage, semiangle, operators, pi, sample, date, scan_sampling, mag, facility;
+    # one number for the scan sampling is refused and asked again, since the key holds [row, col]
+    _answers(monkeypatch, [
+        "300", "25", "first operator, second operator", "investigator", "gold", "2026-06-25",
+        "0.2", "0.2, 0.25", "", "",
+    ])
     meta = cli._prompt_meta("gold_512", "4dstem")
     assert meta == {
         "voltage_kV": 300.0,
@@ -25,7 +32,7 @@ def test_prompt_builds_meta_casting_numbers_and_names_and_skipping_blanks(monkey
         "pi": "investigator",
         "sample": "gold",
         "date": "2026-06-25",
-        "scan_sampling_A": 0.2,
+        "scan_sampling_A": [0.2, 0.25],
     }  # blank magnification + facility are simply absent (present = known)
 
 
@@ -68,7 +75,15 @@ def test_template_is_fillable_example_matching_the_prompts(capsys):
     assert meta["voltage_kV"] == 300                      # example value, not blank
     assert meta["operators"] == ["operator name", "second operator name"]  # placeholders, never people
     assert (meta["pi"], meta["facility"]) == ("principal investigator name", "facility name")
+    assert meta["scan_sampling_A"] == [0.2, 0.2]          # the [row, col] pair, not one number
     assert set(meta) == {"modality"} | {k for k, *_ in cli._PROMPT_FIELDS["4dstem"]}
+
+
+def test_upload_help_names_every_data_bucket(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["upload", "--help"])
+    printed = capsys.readouterr().out
+    assert all(bucket in printed for bucket in DATA_BUCKETS)
 
 
 def _capture_upload(monkeypatch):

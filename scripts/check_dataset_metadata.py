@@ -10,7 +10,8 @@ Refuse a folder whose meta.json is missing required keys.
 Required: name, source, date, sample, shape, dtype, permission
   (permission.received, permission.from, permission.collectors,
   permission.date). from and collectors are one or more names.
-Optional: sampling, units, and optics keys.
+Optional: sampling, units, and optics keys. scan_sampling_A, when given, is
+the [row, col] pair in angstrom; one number is refused.
 """
 
 import argparse
@@ -148,6 +149,16 @@ def check_meta(folder: Path) -> list[str]:
             and len(units) != len(shape)
         ):
             problems.append("units length must match shape length")
+    scan_sampling = meta.get("scan_sampling_A")
+    if scan_sampling is not None and not (
+        isinstance(scan_sampling, list)
+        and len(scan_sampling) == 2
+        and all(
+            isinstance(n, (int, float)) and not isinstance(n, bool)
+            for n in scan_sampling
+        )
+    ):
+        problems.append("scan_sampling_A must be [row, col], two numbers in angstrom")
     return problems
 
 
