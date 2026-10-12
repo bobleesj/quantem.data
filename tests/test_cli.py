@@ -16,13 +16,13 @@ def _answers(monkeypatch, values):
 
 def test_prompt_builds_meta_casting_numbers_and_names_and_skipping_blanks(monkeypatch):
     # 4dstem order: voltage, semiangle, operators, pi, sample, date, scan_sampling, mag, facility
-    _answers(monkeypatch, ["300", "25", "Jane Doe, Bob Lee", "Colin", "gold", "2026-06-25", "0.2", "", ""])
+    _answers(monkeypatch, ["300", "25", "first operator, second operator", "investigator", "gold", "2026-06-25", "0.2", "", ""])
     meta = cli._prompt_meta("gold_512", "4dstem")
     assert meta == {
         "voltage_kV": 300.0,
         "semiangle_mrad": 25.0,
-        "operators": ["Jane Doe", "Bob Lee"],  # comma-separated -> list
-        "pi": "Colin",
+        "operators": ["first operator", "second operator"],  # comma-separated -> list
+        "pi": "investigator",
         "sample": "gold",
         "date": "2026-06-25",
         "scan_sampling_A": 0.2,
@@ -30,7 +30,7 @@ def test_prompt_builds_meta_casting_numbers_and_names_and_skipping_blanks(monkey
 
 
 def test_prompt_warns_but_keeps_going_when_required_is_skipped(monkeypatch, capsys):
-    _answers(monkeypatch, ["", "25", "Jane", "Colin", "gold", "2026-06-25", "", "", ""])  # skip voltage
+    _answers(monkeypatch, ["", "25", "first operator", "investigator", "gold", "2026-06-25", "", "", ""])  # skip voltage
     meta = cli._prompt_meta("gold_512", "4dstem")
     assert "voltage_kV" not in meta
     assert "warning" in capsys.readouterr().out
@@ -38,21 +38,21 @@ def test_prompt_warns_but_keeps_going_when_required_is_skipped(monkeypatch, caps
 
 def test_prompt_skips_fields_already_read_from_the_file(monkeypatch):
     # voltage + date auto-parsed from a Velox .emd, so the operator is asked only for the rest
-    _answers(monkeypatch, ["Jane Doe", "Colin", "gold", "", ""])  # operators, pi, sample, pixel, facility
+    _answers(monkeypatch, ["first operator", "investigator", "gold", "", ""])  # operators, pi, sample, pixel, facility
     meta = cli._prompt_meta("gold", "haadf", known={"voltage_kV": 300.0, "date": "2023-11-14"})
     assert "voltage_kV" not in meta and "date" not in meta  # not asked; from the file
-    assert meta["operators"] == ["Jane Doe"]
+    assert meta["operators"] == ["first operator"]
 
 
 def test_upload_uses_facility_from_env_without_asking(monkeypatch, tmp_path):
-    monkeypatch.setenv("QUANTEM_FACILITY", "ncem")
+    monkeypatch.setenv("QUANTEM_FACILITY", "facility name")
     img = tmp_path / "gold.tif"
     img.write_bytes(b"x")
     captured = _capture_upload(monkeypatch)
     # haadf order with facility supplied by env: voltage, operators, pi, sample, date, pixel, confirm
-    _answers(monkeypatch, ["300", "Jane Doe", "Colin", "gold", "2026-06-25", "", "y"])
+    _answers(monkeypatch, ["300", "first operator", "investigator", "gold", "2026-06-25", "", "y"])
     assert cli.main(["upload", str(img)]) == 0
-    assert captured["meta"]["facility"] == "ncem"  # came from the env, never prompted
+    assert captured["meta"]["facility"] == "facility name"  # came from the env, never prompted
 
 
 def test_ask_reprompts_until_a_number_parses(monkeypatch):
@@ -66,6 +66,8 @@ def test_template_is_fillable_example_matching_the_prompts(capsys):
     meta = yaml.safe_load(capsys.readouterr().out)  # valid YAML, ready for --meta
     assert meta["modality"] == "4dstem"
     assert meta["voltage_kV"] == 300                      # example value, not blank
+    assert meta["operators"] == ["operator name", "second operator name"]  # placeholders, never people
+    assert (meta["pi"], meta["facility"]) == ("principal investigator name", "facility name")
     assert set(meta) == {"modality"} | {k for k, *_ in cli._PROMPT_FIELDS["4dstem"]}
 
 
@@ -85,20 +87,20 @@ def test_upload_command_prompts_confirms_then_uploads(monkeypatch, tmp_path):
     img.write_bytes(b"x")
     captured = _capture_upload(monkeypatch)
     # haadf order: voltage, operators, pi, sample, date, pixel_size_nm, facility, then the confirm
-    _answers(monkeypatch, ["300", "Jane Doe, Bob Lee", "Colin", "gold", "2026-06-25", "", "", "y"])
+    _answers(monkeypatch, ["300", "first operator, second operator", "investigator", "gold", "2026-06-25", "", "", "y"])
     assert cli.main(["upload", str(img)]) == 0
     assert captured["folder"] == "haadf"      # auto from a single file
     assert captured["name"] == "gold"          # auto from the stem
     assert captured["meta"]["voltage_kV"] == 300.0
-    assert captured["meta"]["operators"] == ["Jane Doe", "Bob Lee"]
-    assert captured["meta"]["pi"] == "Colin"
+    assert captured["meta"]["operators"] == ["first operator", "second operator"]
+    assert captured["meta"]["pi"] == "investigator"
 
 
 def test_upload_command_aborts_on_no_confirmation(monkeypatch, tmp_path):
     img = tmp_path / "gold.tif"
     img.write_bytes(b"x")
     captured = _capture_upload(monkeypatch)
-    _answers(monkeypatch, ["300", "Sangjoon Bob Lee", "Colin", "gold", "2026-06-25", "", "", "n"])  # decline
+    _answers(monkeypatch, ["300", "first operator", "investigator", "gold", "2026-06-25", "", "", "n"])  # decline
     assert cli.main(["upload", str(img)]) == 1
     assert captured == {}  # upload never called
 

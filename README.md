@@ -158,20 +158,20 @@ modality: 4dstem
 voltage_kV: 300
 semiangle_mrad: 25
 operators:
-  - Jane Doe
-  - Sangjoon Bob Lee
-pi: Colin Ophus
+  - operator name
+  - second operator name
+pi: principal investigator name
 sample: gold nanoparticles
 date: '2026-06-25'
 scan_sampling_A: 0.2
 magnification_MX: 1.3
-facility: ncem
+facility: facility name
 ```
 
 Most of this is filled automatically when the file already carries it (a Velox `.emd` provides
 voltage / semiangle / magnification / FOV / scan shape / date), so an interactive `upload` only
-asks for what's missing. Set `QUANTEM_FACILITY=ncem` to skip the facility prompt too. `--meta`
-accepts YAML or JSON.
+asks for what's missing. Set `QUANTEM_FACILITY` to your facility name to skip the facility
+prompt too. `--meta` accepts YAML or JSON.
 
 Or from Python:
 

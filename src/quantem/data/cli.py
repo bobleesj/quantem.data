@@ -23,7 +23,7 @@ from quantem.data import download, list_datasets, read_meta, status, tree, uploa
 from quantem.data.huggingface import auto_meta, parse_sidecar
 
 def _names(raw: str) -> list[str]:
-    """Comma-separated people -> a list, so a sidecar stores ``operators: [Jane Doe, Bob Lee]``
+    """Comma-separated people -> a list, so a sidecar stores ``operators: [first, second]``
     rather than one run-together string. A single name yields a one-element list."""
     return [part.strip() for part in raw.split(",") if part.strip()]
 
@@ -38,22 +38,22 @@ _PROMPT_FIELDS: dict[str, list[tuple[str, object, object, bool]]] = {
     "4dstem": [
         ("voltage_kV", 300, float, True),
         ("semiangle_mrad", 25, float, True),
-        ("operators", ["Jane Doe", "Sangjoon Bob Lee"], _names, True),
-        ("pi", "Colin Ophus", str, True),
+        ("operators", ["operator name", "second operator name"], _names, True),
+        ("pi", "principal investigator name", str, True),
         ("sample", "gold nanoparticles", str, True),
         ("date", "2026-06-25", str, True),
         ("scan_sampling_A", 0.2, float, False),
         ("magnification_MX", 1.3, float, False),
-        ("facility", "ncem", str, False),
+        ("facility", "facility name", str, False),
     ],
     "haadf": [
         ("voltage_kV", 300, float, True),
-        ("operators", ["Jane Doe", "Sangjoon Bob Lee"], _names, True),
-        ("pi", "Colin Ophus", str, True),
+        ("operators", ["operator name", "second operator name"], _names, True),
+        ("pi", "principal investigator name", str, True),
         ("sample", "gold nanoparticles", str, True),
         ("date", "2026-06-25", str, True),
         ("pixel_size_nm", 0.01, float, False),
-        ("facility", "ncem", str, False),
+        ("facility", "facility name", str, False),
     ],
 }
 
